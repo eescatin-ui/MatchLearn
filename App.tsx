@@ -4,6 +4,7 @@ import { PaperProvider } from 'react-native-paper';
 import { MD3LightTheme } from 'react-native-paper';
 import { AuthProvider } from './src/context/AuthContext';
 import { AppAlertProvider } from './src/components/AppAlert';
+import { MutationLoadingOverlay } from './src/components/MutationLoadingOverlay';
 import RootNavigator from './src/navigation/RootNavigator';
 import { colors } from './src/theme';
 
@@ -24,6 +25,7 @@ export default function App() {
       <AuthProvider>
         <RootNavigator />
         <AppAlertProvider />
+        <MutationLoadingOverlay />
         <StatusBar style="auto" />
       </AuthProvider>
     </PaperProvider>

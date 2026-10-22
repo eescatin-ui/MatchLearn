@@ -120,23 +120,23 @@ export default function HomeScreen({ navigation }: any) {
 
         <View style={styles.statsGrid}>
           <View style={[styles.statCard, styles.compactStatCard]}>
-            <View style={[styles.statIcon, styles.buddyStatIcon]}>
-              <Ionicons name="people-outline" size={22} color="#0369a1" />
-            </View>
-            <View>
+            <View style={styles.statCardTopline}>
+              <View style={[styles.statIcon, styles.buddyStatIcon]}>
+                <Ionicons name="people-outline" size={18} color="#0369a1" />
+              </View>
               <Text style={styles.statValue}>{buddyCount}</Text>
-              <Text style={styles.statLabel}>Buddies</Text>
             </View>
+            <Text style={styles.statLabel}>Buddies</Text>
           </View>
 
           <View style={[styles.statCard, styles.compactStatCard]}>
-            <View style={[styles.statIcon, styles.groupStatIcon]}>
-              <Ionicons name="people-circle-outline" size={23} color="#15803d" />
-            </View>
-            <View>
+            <View style={styles.statCardTopline}>
+              <View style={[styles.statIcon, styles.groupStatIcon]}>
+                <Ionicons name="people-circle-outline" size={19} color="#15803d" />
+              </View>
               <Text style={styles.statValue}>{groups.length}</Text>
-              <Text style={styles.statLabel}>Groups</Text>
             </View>
+            <Text style={styles.statLabel}>Groups</Text>
           </View>
 
           <TouchableOpacity
@@ -149,17 +149,22 @@ export default function HomeScreen({ navigation }: any) {
                 : `View buddy reviews, average rating ${averageRating.toFixed(1)} out of 5 from ${ratingsCount} ratings`
             }
           >
-            <View style={styles.averageStars}>
-              {[1, 2, 3, 4, 5].map((value) => (
-                <Ionicons
-                  key={value}
-                  name={averageRating !== null && value <= Math.round(averageRating) ? 'star' : 'star-outline'}
-                  size={12}
-                  color={averageRating !== null && value <= Math.round(averageRating) ? '#f59e0b' : '#cbd5e1'}
-                />
-              ))}
+            <View style={styles.statCardTopline}>
+              <View style={styles.averageStars}>
+                {[1, 2, 3, 4, 5].map((value) => {
+                  const filled = averageRating !== null && value <= Math.round(averageRating);
+                  return (
+                    <Ionicons
+                      key={value}
+                      name={filled ? 'star' : 'star-outline'}
+                      size={11}
+                      color={filled ? '#f59e0b' : '#cbd5e1'}
+                    />
+                  );
+                })}
+              </View>
+              <Text style={styles.ratingValue}>{averageRating === null ? '—' : averageRating.toFixed(1)}</Text>
             </View>
-            <Text style={styles.ratingValue}>{averageRating === null ? '—' : averageRating.toFixed(1)}</Text>
             <Text style={styles.statLabel}>Reviews</Text>
           </TouchableOpacity>
 
@@ -314,15 +319,15 @@ const styles = StyleSheet.create({
     borderColor: colors.heroBorder,
     borderWidth: 1,
     borderRadius: 11,
-    padding: 18,
-    marginBottom: 16,
+    padding: 12,
+    marginBottom: 10,
   },
-  heroTopline: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 },
-  heroIcon: { width: 34, height: 34, borderRadius: 10, backgroundColor: colors.accentSoft, alignItems: 'center', justifyContent: 'center' },
+  heroTopline: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 },
+  heroIcon: { width: 28, height: 28, borderRadius: 9, backgroundColor: colors.accentSoft, alignItems: 'center', justifyContent: 'center' },
   heroEyebrow: { color: colors.teal, fontSize: 10, letterSpacing: 1.2, fontWeight: '800' },
-  heroTitle: { color: colors.navy, fontSize: 21, fontWeight: '800', lineHeight: 27 },
-  heroSubtitle: { color: colors.muted, fontSize: 12, lineHeight: 18, marginTop: 5, marginBottom: 14 },
-  heroButton: { alignSelf: 'flex-start', minHeight: 38, borderRadius: 8, backgroundColor: colors.teal, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', gap: 8 },
+  heroTitle: { color: colors.navy, fontSize: 19, fontWeight: '800', lineHeight: 24 },
+  heroSubtitle: { color: colors.muted, fontSize: 12, lineHeight: 17, marginTop: 3, marginBottom: 9 },
+  heroButton: { alignSelf: 'flex-start', minHeight: 36, borderRadius: 8, backgroundColor: colors.teal, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', gap: 8 },
   heroButtonText: { color: '#fff', fontSize: 12, fontWeight: '800' },
   headerRow: {
     flexDirection: 'row',
@@ -377,38 +382,30 @@ const styles = StyleSheet.create({
   },
   compactStatCard: {
     width: '31.5%',
-    minHeight: 100,
-    padding: 10,
+    minHeight: 68,
+    padding: 8,
     flexDirection: 'column',
-    alignItems: 'flex-start',
-    justifyContent: 'space-between',
+    alignItems: 'stretch',
+    justifyContent: 'center',
+    gap: 4,
   },
+  statCardTopline: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 5 },
   statIcon: {
-    width: 42,
-    height: 42,
-    borderRadius: 13,
+    width: 29,
+    height: 29,
+    borderRadius: 10,
     backgroundColor: colors.page,
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 10,
   },
   buddyStatIcon: { backgroundColor: '#e0f2fe' },
   groupStatIcon: { backgroundColor: '#dcfce7' },
-  rateButton: {
-    marginBottom: 12,
-    justifyContent: 'center',
-    alignItems: 'center',
-    gap: 5,
-  },
-  averageStars: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 1,
-  },
+  rateButton: { marginBottom: 12 },
+  averageStars: { flexDirection: 'row', alignItems: 'center', gap: 1 },
   ratingValue: {
     color: colors.navy,
-    fontSize: 18,
-    lineHeight: 21,
+    fontSize: 17,
+    lineHeight: 20,
     fontWeight: '800',
   },
   orange: { backgroundColor: '#f093fb' },
@@ -417,14 +414,14 @@ const styles = StyleSheet.create({
     fontSize: 18,
   },
   statValue: {
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: '800',
     color: colors.navy,
   },
   statLabel: {
-    fontSize: 11,
+    fontSize: 10,
     color: colors.muted,
-    marginTop: 2,
+    marginTop: 0,
   },
   sectionHeader: {
     flexDirection: 'row',

@@ -56,6 +56,12 @@ export default function ChatScreen({ navigation, route }: any) {
     }
   };
 
+  const lastIncomingMessageIndex = conversation.type === 'direct'
+    ? messages.reduce((lastIndex, message, index) => (
+      message.sender === 'them' ? index : lastIndex
+    ), -1)
+    : -1;
+
   return (
     <KeyboardAvoidingView
       style={styles.frame}
@@ -81,31 +87,39 @@ export default function ChatScreen({ navigation, route }: any) {
       ) : (
         <ScrollView style={styles.messagesWrap} contentContainerStyle={styles.messagesContent}>
           {messages.length === 0 ? <Text style={styles.notice}>No messages yet. Start the conversation.</Text> : null}
-          {messages.map((message) => (
+          {messages.map((message, index) => (
             <View
               key={`${conversation.type}:${conversation.type === 'group' ? conversation.group_id ?? conversation.id : conversation.direct_conversation_id ?? conversation.id}:${message.id}`}
-              style={[styles.messageRow, message.sender === 'me' ? styles.messageRowMine : styles.messageRowThem]}
             >
-              {message.sender === 'them' ? (
-                message.user?.profile_photo_url || conversation.profile_photo_url ? (
-                  <Image
-                    source={{ uri: message.user?.profile_photo_url ?? conversation.profile_photo_url ?? undefined }}
-                    style={styles.messageAvatar}
-                  />
+              <View
+                style={[styles.messageRow, message.sender === 'me' ? styles.messageRowMine : styles.messageRowThem]}
+              >
+                {message.sender === 'them' ? (
+                  message.user?.profile_photo_url || conversation.profile_photo_url ? (
+                    <Image
+                      source={{ uri: message.user?.profile_photo_url ?? conversation.profile_photo_url ?? undefined }}
+                      style={styles.messageAvatar}
+                    />
+                  ) : (
+                    <View style={[styles.messageAvatar, styles.messageAvatarFallback]}>
+                      <Text style={styles.messageAvatarText}>
+                        {(message.user?.name ?? conversation.name).slice(0, 2).toUpperCase()}
+                      </Text>
+                    </View>
+                  )
                 ) : (
-                  <View style={[styles.messageAvatar, styles.messageAvatarFallback]}>
-                    <Text style={styles.messageAvatarText}>
-                      {(message.user?.name ?? conversation.name).slice(0, 2).toUpperCase()}
-                    </Text>
-                  </View>
-                )
-              ) : null}
-              <View style={[styles.messageBubble, message.sender === 'me' ? styles.messageMine : styles.messageThem]}>
-                <Text style={[styles.senderName, message.sender === 'me' && styles.senderNameMine]}>
-                  {message.sender === 'me' ? 'You' : message.user?.name || (conversation.type === 'direct' ? conversation.name : 'Group member')}
-                </Text>
-                <Text style={[styles.messageText, message.sender === 'me' && styles.messageTextMine]}>{message.content}</Text>
+                  null
+                )}
+                <View style={[styles.messageBubble, message.sender === 'me' ? styles.messageMine : styles.messageThem]}>
+                  <Text style={[styles.senderName, message.sender === 'me' && styles.senderNameMine]}>
+                    {message.sender === 'me' ? 'You' : message.user?.name || (conversation.type === 'direct' ? conversation.name : 'Group member')}
+                  </Text>
+                  <Text style={[styles.messageText, message.sender === 'me' && styles.messageTextMine]}>{message.content}</Text>
+                </View>
               </View>
+              {index === lastIncomingMessageIndex ? (
+                <Text style={styles.seenReceipt}>Seen</Text>
+              ) : null}
             </View>
           ))}
         </ScrollView>
@@ -150,6 +164,7 @@ const styles = StyleSheet.create({
   messageThem: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border },
   messageText: { color: colors.text, fontSize: 14, lineHeight: 20 },
   messageTextMine: { color: '#fff' },
+  seenReceipt: { color: colors.muted, fontSize: 10, fontWeight: '600', textAlign: 'left', marginLeft: 38, marginTop: -6, marginBottom: 8 },
   senderName: { color: '#64748b', fontSize: 11, fontWeight: '700', marginBottom: 3 },
   senderNameMine: { color: '#dbeafe' },
   inputBar: { backgroundColor: colors.surface, borderTopWidth: 1, borderTopColor: colors.border, padding: 10, flexDirection: 'row', alignItems: 'flex-end', gap: 10 },

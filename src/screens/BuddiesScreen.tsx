@@ -19,9 +19,16 @@ import {
   GROUP_AVATAR_OPTIONS,
   GroupAvatarColor,
   GroupAvatarIcon,
+  GroupStudyMode,
+  GroupStudyStyle,
+  GroupStudyTime,
+  GROUP_STUDY_MODE_OPTIONS,
+  GROUP_STUDY_STYLE_OPTIONS,
+  GROUP_STUDY_TIME_OPTIONS,
   respondToGroupJoinRequest,
 } from '../services/api/groups';
 import GroupAvatar from '../components/GroupAvatar';
+import GroupPreferencePicker from '../components/GroupPreferencePicker';
 import {
   BuddyConnections,
   fetchBuddyConnections,
@@ -47,8 +54,11 @@ export default function BuddiesScreen({ navigation }: any) {
   const [name, setName] = useState('');
   const [course, setCourse] = useState('');
   const [schedule, setSchedule] = useState('');
-  const [avatarIcon, setAvatarIcon] = useState<GroupAvatarIcon>('book-outline');
+  const [avatarIcon, setAvatarIcon] = useState<GroupAvatarIcon>('construct-outline');
   const [avatarColor, setAvatarColor] = useState<GroupAvatarColor>('#1a5f7a');
+  const [studyStyle, setStudyStyle] = useState<GroupStudyStyle>('Visual');
+  const [preferredStudyTime, setPreferredStudyTime] = useState<GroupStudyTime>('Flexible');
+  const [studyMode, setStudyMode] = useState<GroupStudyMode>('either');
   const [respondingTo, setRespondingTo] = useState<number | null>(null);
   const [respondingToGroup, setRespondingToGroup] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
@@ -68,7 +78,10 @@ export default function BuddiesScreen({ navigation }: any) {
     group.name,
     group.course,
     group.schedule,
-    group.description
+    group.description,
+    group.study_style,
+    group.preferred_study_time,
+    group.study_mode
   ));
   const filteredGroupRequests = groups.flatMap((group) => (group.join_requests ?? [])
     .filter((request) => matchesSearch(searchQuery, request.user_name, group.name, group.course))
@@ -149,14 +162,20 @@ export default function BuddiesScreen({ navigation }: any) {
         course: course.trim(),
         avatar_icon: avatarIcon,
         avatar_color: avatarColor,
+        study_style: studyStyle,
+        preferred_study_time: preferredStudyTime,
+        study_mode: studyMode,
         schedule: schedule.trim() || 'Flexible',
       });
       setGroups((current) => [group, ...current]);
       setName('');
       setCourse('');
       setSchedule('');
-      setAvatarIcon('book-outline');
+      setAvatarIcon('construct-outline');
       setAvatarColor('#1a5f7a');
+      setStudyStyle('Visual');
+      setPreferredStudyTime('Flexible');
+      setStudyMode('either');
       setShowCreate(false);
     } catch (createError) {
       Alert.alert('Could not create group', createError instanceof Error ? createError.message : 'Please try again.');
@@ -198,9 +217,22 @@ export default function BuddiesScreen({ navigation }: any) {
               accessibilityRole="button"
               accessibilityState={{ selected: tab === item }}
             >
-              <Text style={[styles.tabText, tab === item && styles.tabTextActive]}>
-                {item === 'buddies' ? 'Buddies' : item === 'groups' ? 'Groups' : `Requests (${totalRequests})`}
-              </Text>
+              {item === 'requests' ? (
+                <View style={styles.requestTabLabel}>
+                  <Text style={[styles.tabText, tab === item && styles.tabTextActive]}>Requests</Text>
+                  {totalRequests > 0 ? (
+                    <View style={styles.requestCountBadge}>
+                      <Text style={styles.requestCountText}>
+                        {totalRequests > 99 ? '99+' : totalRequests}
+                      </Text>
+                    </View>
+                  ) : null}
+                </View>
+              ) : (
+                <Text style={[styles.tabText, tab === item && styles.tabTextActive]}>
+                  {item === 'buddies' ? 'Buddies' : 'Groups'}
+                </Text>
+              )}
             </TouchableOpacity>
           ))}
         </View>
@@ -224,8 +256,11 @@ export default function BuddiesScreen({ navigation }: any) {
 
         {tab === 'groups' && (
           <TouchableOpacity style={styles.primaryButton} onPress={() => {
-            setAvatarIcon('book-outline');
+            setAvatarIcon('construct-outline');
             setAvatarColor('#1a5f7a');
+            setStudyStyle('Visual');
+            setPreferredStudyTime('Flexible');
+            setStudyMode('either');
             setShowCreate(true);
           }}>
             <Ionicons name="add" size={20} color="#fff" />
@@ -432,11 +467,11 @@ export default function BuddiesScreen({ navigation }: any) {
 
       <Modal visible={showCreate} transparent animationType="slide" onRequestClose={() => setShowCreate(false)}>
         <View style={styles.modalOverlay}>
-          <View style={styles.modalCard}>
+          <ScrollView style={styles.modalCard} contentContainerStyle={styles.modalContent} keyboardShouldPersistTaps="handled">
             <Text style={styles.modalTitle}>Create study group</Text>
             <View style={styles.avatarPreview}>
               <GroupAvatar icon={avatarIcon} color={avatarColor} size={58} />
-              <Text style={styles.cardSub}>Choose a group icon and color</Text>
+              <Text style={styles.cardSub}>Choose the icon for your SNSU department</Text>
             </View>
             <View style={styles.avatarOptions}>
               {GROUP_AVATAR_OPTIONS.map((option) => (
@@ -449,6 +484,9 @@ export default function BuddiesScreen({ navigation }: any) {
                   onPress={() => setAvatarIcon(option.icon)}
                 >
                   <Ionicons name={option.icon} size={21} color={avatarIcon === option.icon ? '#0d3b4f' : '#64748b'} />
+                  <Text style={[styles.iconOptionLabel, avatarIcon === option.icon && styles.iconOptionLabelSelected]}>
+                    {option.shortLabel}
+                  </Text>
                 </TouchableOpacity>
               ))}
             </View>
@@ -466,10 +504,28 @@ export default function BuddiesScreen({ navigation }: any) {
             </View>
             <TextInput value={name} onChangeText={setName} placeholder="Group name" style={styles.input} />
             <TextInput value={course} onChangeText={setCourse} placeholder="Course" style={styles.input} />
+            <GroupPreferencePicker
+              label="Study style"
+              options={GROUP_STUDY_STYLE_OPTIONS}
+              value={studyStyle}
+              onChange={setStudyStyle}
+            />
+            <GroupPreferencePicker
+              label="Preferred study time"
+              options={GROUP_STUDY_TIME_OPTIONS}
+              value={preferredStudyTime}
+              onChange={setPreferredStudyTime}
+            />
+            <GroupPreferencePicker
+              label="Study mode"
+              options={GROUP_STUDY_MODE_OPTIONS}
+              value={studyMode}
+              onChange={setStudyMode}
+            />
             <TextInput value={schedule} onChangeText={setSchedule} placeholder="Schedule (optional)" style={styles.input} />
             <TouchableOpacity style={styles.primaryButton} onPress={() => { void handleCreateGroup(); }}><Text style={styles.primaryButtonText}>Create</Text></TouchableOpacity>
             <TouchableOpacity onPress={() => setShowCreate(false)}><Text style={styles.link}>Cancel</Text></TouchableOpacity>
-          </View>
+          </ScrollView>
         </View>
       </Modal>
     </View>
@@ -496,6 +552,9 @@ const styles = StyleSheet.create({
   tabActive: { backgroundColor: '#fff' },
   tabText: { color: '#64748b', fontWeight: '700' },
   tabTextActive: { color: colors.navy },
+  requestTabLabel: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  requestCountBadge: { minWidth: 18, height: 18, paddingHorizontal: 4, borderRadius: 9, backgroundColor: colors.danger, alignItems: 'center', justifyContent: 'center' },
+  requestCountText: { color: '#ffffff', fontSize: 10, fontWeight: '800' },
   searchBox: { minHeight: 46, flexDirection: 'row', alignItems: 'center', gap: 9, backgroundColor: '#fff', borderWidth: 1, borderColor: '#e2e8f0', borderRadius: 14, paddingHorizontal: 13, marginBottom: 14 },
   searchInput: { flex: 1, minHeight: 44, color: '#0f172a', paddingVertical: 8, fontSize: 13 },
   sectionTitle: { color: colors.navy, fontSize: 17, fontWeight: '800', marginTop: 12, marginBottom: 8 },
@@ -535,11 +594,14 @@ const styles = StyleSheet.create({
   emptyText: { color: colors.muted, textAlign: 'center', lineHeight: 19 },
   link: { color: '#1a5f7a', fontWeight: '700', textAlign: 'center', padding: 10 },
   modalOverlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: '#0006' },
-  modalCard: { backgroundColor: '#fff', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 20, gap: 10 },
+  modalCard: { backgroundColor: '#fff', borderTopLeftRadius: 20, borderTopRightRadius: 20, maxHeight: '90%' },
+  modalContent: { padding: 20, gap: 10 },
   modalTitle: { color: '#0d3b4f', fontSize: 20, fontWeight: '800', marginBottom: 6 },
   avatarPreview: { alignItems: 'center', gap: 8, paddingVertical: 4 },
   avatarOptions: { flexDirection: 'row', justifyContent: 'center', flexWrap: 'wrap', gap: 10 },
-  iconOption: { width: 42, height: 42, borderRadius: 13, backgroundColor: '#f1f5f9', alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: 'transparent' },
+  iconOption: { width: '30%', minHeight: 58, paddingHorizontal: 3, paddingVertical: 5, borderRadius: 13, backgroundColor: '#f1f5f9', alignItems: 'center', justifyContent: 'center', gap: 2, borderWidth: 2, borderColor: 'transparent' },
+  iconOptionLabel: { color: '#64748b', fontSize: 8, fontWeight: '700', textAlign: 'center' },
+  iconOptionLabelSelected: { color: '#0d3b4f' },
   selectedOption: { borderColor: '#1a5f7a', backgroundColor: '#eaf4f7' },
   colorOption: { width: 30, height: 30, borderRadius: 15, borderWidth: 3, borderColor: '#fff' },
   selectedColor: { borderColor: '#0d3b4f' },

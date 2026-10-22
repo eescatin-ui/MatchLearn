@@ -191,20 +191,43 @@ export default function DiscoverScreen({ navigation, route }: any) {
           <View style={styles.listGroup}>
             {filteredGroups.map((group, index) => (
               <View key={group.id} style={[styles.listRow, index === filteredGroups.length - 1 && styles.listRowLast]}>
-                <GroupAvatar icon={group.avatar_icon} color={group.avatar_color} size={40} />
+                <View style={styles.groupAvatarWrapper}>
+                  <GroupAvatar icon={group.avatar_icon} color={group.avatar_color} size={40} />
+                  {group.average_rating != null ? (
+                    <View
+                      style={styles.ratingBadge}
+                      accessibilityLabel={`Rated ${group.average_rating.toFixed(1)} out of 5 from ${group.ratings_count ?? 0} ratings`}
+                    >
+                      <Text style={styles.ratingValue}>{group.average_rating.toFixed(1)}</Text>
+                      <Ionicons name="star" size={9} color="#d97706" />
+                    </View>
+                  ) : null}
+                </View>
                 <View style={styles.cardBody}>
                   <Text style={styles.cardTitle}>{group.name}</Text>
                   <Text style={styles.body}>{group.course} · {group.members ?? 0} members</Text>
+                  {group.study_style && group.preferred_study_time && group.study_mode ? (
+                    <Text style={styles.body} numberOfLines={1}>
+                      {group.study_style} · {group.preferred_study_time} · {group.study_mode.replace('_', ' ')}
+                    </Text>
+                  ) : null}
                   {group.schedule ? <Text style={styles.body}>{group.schedule}</Text> : null}
                   {group.description ? <Text style={styles.body} numberOfLines={2}>{group.description}</Text> : null}
                 </View>
-                {group.request_status === 'pending' ? (
-                  <View style={styles.pendingButton}><Text style={styles.pendingText}>Requested</Text></View>
-                ) : (
-                  <TouchableOpacity style={styles.joinButton} disabled={joining === group.id} onPress={() => { void handleJoin(group); }}>
-                    <Text style={styles.joinText}>{joining === group.id ? 'Requesting…' : 'Join'}</Text>
-                  </TouchableOpacity>
-                )}
+                <View style={styles.groupActionColumn}>
+                  <View style={[styles.matchBadge, { backgroundColor: getMatchScoreColors(group.compatibility_score ?? 0).backgroundColor }]}>
+                    <Text style={[styles.matchBadgeText, { color: getMatchScoreColors(group.compatibility_score ?? 0).color }]}>
+                      {group.compatibility_score ?? 0}%
+                    </Text>
+                  </View>
+                  {group.request_status === 'pending' ? (
+                    <View style={styles.pendingButton}><Text style={styles.pendingText}>Requested</Text></View>
+                  ) : (
+                    <TouchableOpacity style={styles.joinButton} disabled={joining === group.id} onPress={() => { void handleJoin(group); }}>
+                      <Text style={styles.joinText}>{joining === group.id ? 'Requesting…' : 'Join'}</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
               </View>
             ))}
           </View>
@@ -252,6 +275,8 @@ const styles = StyleSheet.create({
   listRow: { minHeight: 68, paddingHorizontal: 12, paddingVertical: 10, flexDirection: 'row', alignItems: 'center', gap: 10, borderBottomWidth: 1, borderBottomColor: colors.border },
   listRowLast: { borderBottomWidth: 0 },
   matchMeta: { alignItems: 'flex-end', gap: 5 },
+  groupAvatarWrapper: { width: 40, height: 40, position: 'relative' },
+  groupActionColumn: { alignItems: 'flex-end', gap: 5 },
   cardBody: { flex: 1 },
   cardTitle: { color: colors.navy, fontWeight: '700', fontSize: 14, marginBottom: 4 },
   ratingBadge: { position: 'absolute', top: -5, right: -6, minWidth: 27, height: 18, paddingHorizontal: 4, borderRadius: 9, backgroundColor: '#fffbeb', borderWidth: 1, borderColor: '#ffffff', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 2, zIndex: 1 },

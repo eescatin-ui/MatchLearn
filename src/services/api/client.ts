@@ -6,7 +6,9 @@ import {
 } from 'axios';
 import * as SecureStore from 'expo-secure-store';
 
-const API_BASE_URL = `${process.env.EXPO_PUBLIC_API_URL ?? 'http://192.168.1.42:8000'}`.replace(/\/+$/, '') + '/api/v1';
+const configuredApiUrl = process.env.EXPO_PUBLIC_API_URL;
+const apiRoot = (configuredApiUrl ?? 'https://matchlearn-backend-backup-1.onrender.com').replace(/\/+$/, '');
+const API_BASE_URL = `${apiRoot}/api/v1`;
 
 const TOKEN_KEY = 'auth_token';
 
@@ -58,6 +60,31 @@ const getErrorMessage = (error: any): string => {
 
 export class ApiClient {
   private client: AxiosInstance;
+  private pendingMutations = 0;
+  private mutationListeners = new Set<() => void>();
+
+  public subscribeToMutations = (listener: () => void): (() => void) => {
+    this.mutationListeners.add(listener);
+    return () => this.mutationListeners.delete(listener);
+  };
+
+  public hasPendingMutations = (): boolean => this.pendingMutations > 0;
+
+  private notifyMutationListeners(): void {
+    this.mutationListeners.forEach((listener) => listener());
+  }
+
+  private async runMutation<T>(request: () => Promise<T>): Promise<T> {
+    this.pendingMutations += 1;
+    this.notifyMutationListeners();
+
+    try {
+      return await request();
+    } finally {
+      this.pendingMutations -= 1;
+      this.notifyMutationListeners();
+    }
+  }
 
   constructor() {
     this.client = create({
@@ -152,7 +179,7 @@ export class ApiClient {
     data?: any,
     config?: any
   ) {
-    return this.client.post<T>(url, data, config);
+    return this.runMutation(() => this.client.post<T>(url, data, config));
   }
 
   public async put<T = any>(
@@ -160,7 +187,7 @@ export class ApiClient {
     data?: any,
     config?: any
   ) {
-    return this.client.put<T>(url, data, config);
+    return this.runMutation(() => this.client.put<T>(url, data, config));
   }
 
   public async patch<T = any>(
@@ -168,14 +195,14 @@ export class ApiClient {
     data?: any,
     config?: any
   ) {
-    return this.client.patch<T>(url, data, config);
+    return this.runMutation(() => this.client.patch<T>(url, data, config));
   }
 
   public async delete<T = any>(
     url: string,
     config?: any
   ) {
-    return this.client.delete<T>(url, config);
+    return this.runMutation(() => this.client.delete<T>(url, config));
   }
 }
 

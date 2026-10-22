@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import {
   ActivityIndicator,
   Image,
@@ -25,10 +25,12 @@ import AppHeader from '../components/AppHeader';
 import GroupAvatar from '../components/GroupAvatar';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../context/AuthContext';
+import { useFocusEffect } from '@react-navigation/native';
 import { colors } from '../theme';
 
 type DateTimePickerTarget = 'startDate' | 'startTime' | 'endDate' | 'endTime';
 type SessionViewMode = 'list' | 'calendar';
+type SessionStatusFilter = 'all' | 'ongoing' | 'pending' | 'completed' | 'cancelled';
 
 function SessionTargetAvatar({ session, size = 36 }: { session: StudySessionRecord; size?: number }) {
   if (session.target_type === 'group') {
@@ -115,6 +117,7 @@ export default function ScheduleScreen({ navigation }: any) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<SessionViewMode>('list');
+  const [statusFilter, setStatusFilter] = useState<SessionStatusFilter>('all');
   const [calendarMonth, setCalendarMonth] = useState(() => {
     const today = new Date();
     return new Date(today.getFullYear(), today.getMonth(), 1);
@@ -155,7 +158,9 @@ export default function ScheduleScreen({ navigation }: any) {
     }
   }, []);
 
-  useEffect(() => { void Promise.resolve().then(load); }, [load]);
+  useFocusEffect(useCallback(() => {
+    void load();
+  }, [load]));
 
   const openDateTimePicker = (target: DateTimePickerTarget) => {
     const current = target.startsWith('start') ? startsAt : endsAt;
@@ -248,10 +253,12 @@ export default function ScheduleScreen({ navigation }: any) {
       setDateTimePickerTarget(null);
       setDateTimeDraft(null);
       Alert.alert(
-        editingSession ? (editingSession.status === 'completed' ? 'Session rescheduled' : 'Session updated') : 'Invitation sent',
         editingSession
-          ? editingSession.status === 'completed'
-            ? 'Your completed session has been rescheduled and is on going again.'
+          ? ['completed', 'cancelled'].includes(editingSession.status) ? 'Session rescheduled' : 'Session updated'
+          : 'Invitation sent',
+        editingSession
+          ? ['completed', 'cancelled'].includes(editingSession.status)
+            ? 'Your session has been rescheduled and is active again.'
             : 'Your study session details have been updated.'
           : groupId ? 'Members of your joined group can confirm or decline the session.' : 'Your study buddy can confirm or decline the session.'
       );
@@ -283,8 +290,8 @@ export default function ScheduleScreen({ navigation }: any) {
     ]);
   };
 
-  const removeCompletedSession = (session: StudySessionRecord) => {
-    Alert.alert('Delete completed session?', `Permanently delete "${session.topic}" and its reviews?`, [
+  const removeSession = (session: StudySessionRecord) => {
+    Alert.alert('Delete study session?', `Permanently delete "${session.topic}"${session.status === 'completed' ? ' and its reviews' : ''}?`, [
       { text: 'Keep session', style: 'cancel' },
       {
         text: 'Delete session',
@@ -303,8 +310,20 @@ export default function ScheduleScreen({ navigation }: any) {
   const ongoingCount = sessions.filter((session) => session.status === 'confirmed' && !session.is_past).length;
   const pendingCount = sessions.filter((session) => session.status === 'pending' && !session.is_past).length;
   const completedCount = sessions.filter((session) => session.status === 'completed').length;
+  const cancelledCount = sessions.filter((session) => session.status === 'cancelled').length;
+  const filteredSessions = statusFilter === 'all'
+    ? [
+        ...sessions.filter((session) => session.status !== 'cancelled'),
+        ...sessions.filter((session) => session.status === 'cancelled'),
+      ]
+    : sessions.filter((session) => {
+        if (statusFilter === 'ongoing') return session.status === 'confirmed' && !session.is_past;
+        if (statusFilter === 'pending') return session.status === 'pending' && !session.is_past;
+        if (statusFilter === 'completed') return session.status === 'completed';
+        return session.status === 'cancelled';
+      });
   const selectedDateKey = getLocalDateKey(selectedCalendarDate);
-  const sessionsForSelectedDate = sessions.filter(
+  const sessionsForSelectedDate = filteredSessions.filter(
     (session) => getLocalDateKey(new Date(session.starts_at)) === selectedDateKey
   );
 
@@ -329,17 +348,48 @@ export default function ScheduleScreen({ navigation }: any) {
           </TouchableOpacity>
         </View>
 
-        <View style={styles.summaryRow}>
-          <SummaryCard icon="flash-outline" label="On going" value={ongoingCount} tint="green" />
-          <SummaryCard icon="time-outline" label="Pending" value={pendingCount} tint="amber" />
-          <SummaryCard icon="checkmark-done-outline" label="Completed" value={completedCount} tint="purple" />
-        </View>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.statusFilters}
+        >
+          {([
+            { key: 'all', label: 'All', count: sessions.length },
+            { key: 'ongoing', label: 'On going', count: ongoingCount },
+            { key: 'pending', label: 'Pending', count: pendingCount },
+            { key: 'completed', label: 'Completed', count: completedCount },
+            { key: 'cancelled', label: 'Cancelled', count: cancelledCount },
+          ] as const).map((filter) => {
+            const isSelected = statusFilter === filter.key;
+            return (
+              <TouchableOpacity
+                key={filter.key}
+                style={[styles.statusFilterButton, isSelected && styles.statusFilterButtonActive]}
+                onPress={() => setStatusFilter(filter.key)}
+                accessibilityRole="button"
+                accessibilityLabel={`${filter.label} sessions, ${filter.count}`}
+                accessibilityState={{ selected: isSelected }}
+              >
+                <Text style={[styles.statusFilterText, isSelected && styles.statusFilterTextActive]}>
+                  {filter.label}
+                </Text>
+                <Text style={[styles.statusFilterCount, isSelected && styles.statusFilterCountActive]}>
+                  {filter.count}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
 
         <View style={styles.listHeading}>
           <View>
             <Text style={styles.listTitle}>{viewMode === 'calendar' ? 'Schedule calendar' : 'Your sessions'}</Text>
             <Text style={styles.listCount}>
-              {viewMode === 'calendar' ? 'Choose a date to see its sessions' : `${sessions.length} total`}
+              {viewMode === 'calendar'
+                ? 'Choose a date to see its sessions'
+                : statusFilter === 'all'
+                  ? `${sessions.length} total`
+                  : `${filteredSessions.length} of ${sessions.length} sessions`}
             </Text>
           </View>
           <View style={styles.viewToggle}>
@@ -369,7 +419,7 @@ export default function ScheduleScreen({ navigation }: any) {
             <ScheduleCalendar
               month={calendarMonth}
               selectedDate={selectedCalendarDate}
-              sessions={sessions}
+              sessions={filteredSessions}
               onChangeMonth={setCalendarMonth}
               onSelectDate={setSelectedCalendarDate}
             />
@@ -438,19 +488,33 @@ export default function ScheduleScreen({ navigation }: any) {
               </View>
             )}
           </>
-        ) : sessions.length === 0 ? (
+        ) : filteredSessions.length === 0 ? (
           <View style={styles.empty}>
             <View style={styles.emptyIcon}><Ionicons name="calendar-clear-outline" size={25} color="#1a5f7a" /></View>
-            <Text style={styles.cardTitle}>No study sessions yet</Text>
-            <Text style={styles.body}>Create a session with a study buddy or group to get started.</Text>
+            <Text style={styles.cardTitle}>
+              {sessions.length === 0 ? 'No study sessions yet' : `No ${statusFilter} sessions`}
+            </Text>
+            <Text style={styles.body}>
+              {sessions.length === 0
+                ? 'Create a session with a study buddy or group to get started.'
+                : 'Choose another status filter to see more sessions.'}
+            </Text>
           </View>
         ) : (
           <View style={styles.sessionList}>
-            {sessions.map((session, index) => {
+            {filteredSessions.map((session, index) => {
           const isCreator = session.host_user_id === user?.id;
           const startDate = new Date(session.starts_at);
           return (
-            <View key={session.id} style={[styles.card, index === sessions.length - 1 && styles.cardLast]}>
+            <React.Fragment key={session.id}>
+            {session.status === 'cancelled' && (
+              <Text style={styles.cancelledSectionTitle}>
+                {index === 0 || filteredSessions[index - 1]?.status !== 'cancelled'
+                  ? 'Cancelled sessions'
+                  : null}
+              </Text>
+            )}
+            <View style={[styles.card, index === filteredSessions.length - 1 && styles.cardLast]}>
               <View style={styles.sessionMain}>
                 <View style={styles.dateTile}>
                   <Text style={styles.dateMonth}>{startDate.toLocaleDateString(undefined, { month: 'short' }).toUpperCase()}</Text>
@@ -519,10 +583,13 @@ export default function ScheduleScreen({ navigation }: any) {
                     <SessionAction icon="close-circle-outline" label="Cancel" kind="danger" onPress={() => cancelSession(session)} />
                   </>
                 )}
-                {session.status === 'completed' && isCreator && (
+                {!isCreator && session.status === 'confirmed' && !session.is_past ? (
+                  <SessionAction icon="close-circle-outline" label="Cancel" kind="danger" onPress={() => cancelSession(session)} />
+                ) : null}
+                {['completed', 'cancelled'].includes(session.status) && isCreator && (
                   <>
                     <SessionAction icon="calendar-outline" label="Reschedule" kind="primary" onPress={() => openEditForm(session)} />
-                    <SessionAction icon="trash-outline" label="Delete" kind="danger" onPress={() => removeCompletedSession(session)} />
+                    <SessionAction icon="trash-outline" label="Delete" kind="danger" onPress={() => removeSession(session)} />
                   </>
                 )}
                 {session.status === 'completed' && session.target_type === 'buddy' && session.participant_user_id !== null && (
@@ -564,6 +631,7 @@ export default function ScheduleScreen({ navigation }: any) {
                 ) : null}
               </View>
             </View>
+            </React.Fragment>
           );
             })}
           </View>
@@ -578,7 +646,7 @@ export default function ScheduleScreen({ navigation }: any) {
             keyboardShouldPersistTaps="handled"
           >
             <Text style={styles.modalTitle}>
-              {editingSession?.status === 'completed' ? 'Reschedule study session' : editingSession ? 'Edit study session' : 'Create study session'}
+              {['completed', 'cancelled'].includes(editingSession?.status ?? '') ? 'Reschedule study session' : editingSession ? 'Edit study session' : 'Create study session'}
             </Text>
             {!editingSession ? (
             <>
@@ -699,20 +767,20 @@ const styles = StyleSheet.create({
   heroCard: {
     borderRadius: 11,
     backgroundColor: colors.heroSurface,
-    padding: 18,
-    marginBottom: 14,
+    padding: 12,
+    marginBottom: 10,
     overflow: 'hidden',
     borderWidth: 1,
     borderColor: colors.heroBorder,
   },
-  heroCopy: { marginBottom: 16 },
+  heroCopy: { marginBottom: 10 },
   heroEyebrow: { color: colors.teal, fontSize: 10, fontWeight: '800', letterSpacing: 1.4, marginBottom: 7 },
-  heroTitle: { color: colors.navy, fontSize: 20, lineHeight: 26, fontWeight: '800', maxWidth: 280 },
-  heroSubtitle: { color: colors.muted, fontSize: 12, lineHeight: 18, marginTop: 6 },
+  heroTitle: { color: colors.navy, fontSize: 18, lineHeight: 23, fontWeight: '800', maxWidth: 280 },
+  heroSubtitle: { color: colors.muted, fontSize: 12, lineHeight: 17, marginTop: 3 },
   createButton: {
     alignSelf: 'flex-start',
-    minHeight: 42,
-    paddingHorizontal: 14,
+    minHeight: 36,
+    paddingHorizontal: 12,
     borderRadius: 8,
     backgroundColor: colors.teal,
     flexDirection: 'row',
@@ -720,25 +788,31 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   createButtonText: { color: '#fff', fontSize: 13, fontWeight: '800' },
-  summaryRow: { flexDirection: 'row', gap: 8, marginBottom: 22 },
-  summaryCard: {
-    flex: 1,
-    minHeight: 82,
-    padding: 11,
-    borderRadius: 16,
-    backgroundColor: '#fff',
+  statusFilters: { flexDirection: 'row', gap: 7, marginHorizontal: -8, paddingHorizontal: 8, marginBottom: 16 },
+  statusFilterButton: {
+    flexShrink: 0,
+    minWidth: 66,
+    minHeight: 36,
+    paddingHorizontal: 9,
+    paddingVertical: 6,
+    borderRadius: 8,
+    backgroundColor: '#ffffff',
     borderWidth: 1,
     borderColor: '#e8edf2',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
   },
-  summaryIcon: { width: 28, height: 28, borderRadius: 9, alignItems: 'center', justifyContent: 'center', marginBottom: 7 },
-  summaryGreen: { backgroundColor: '#dcfce7' },
-  summaryAmber: { backgroundColor: '#fef3c7' },
-  summaryPurple: { backgroundColor: '#f3e8ff' },
-  summaryValue: { color: '#0f172a', fontSize: 18, fontWeight: '800' },
-  summaryLabel: { color: '#64748b', fontSize: 10, fontWeight: '600', marginTop: 2 },
+  statusFilterButtonActive: { backgroundColor: '#e8f1f5', borderColor: '#1a5f7a' },
+  statusFilterText: { color: '#64748b', fontSize: 10, fontWeight: '700' },
+  statusFilterTextActive: { color: '#1a5f7a' },
+  statusFilterCount: { color: '#64748b', fontSize: 10, fontWeight: '800' },
+  statusFilterCountActive: { color: '#1a5f7a' },
   listHeading: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
   listTitle: { color: '#0d3b4f', fontSize: 18, fontWeight: '800' },
   listCount: { color: '#64748b', fontSize: 12, fontWeight: '600' },
+  cancelledSectionTitle: { color: '#64748b', fontSize: 13, fontWeight: '800', paddingHorizontal: 12, paddingTop: 14, paddingBottom: 8 },
   viewToggle: { flexDirection: 'row', padding: 3, borderRadius: 12, backgroundColor: '#e8edf2', gap: 3 },
   viewToggleButton: { width: 36, height: 34, alignItems: 'center', justifyContent: 'center', borderRadius: 9 },
   viewToggleButtonActive: { backgroundColor: '#1a5f7a' },
@@ -880,33 +954,6 @@ const styles = StyleSheet.create({
   input: { backgroundColor: '#f8fafc', borderWidth: 1, borderColor: '#dbe3eb', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 11 },
   disabled: { opacity: 0.6 },
 });
-
-function SummaryCard({
-  icon,
-  label,
-  value,
-  tint,
-}: {
-  icon: keyof typeof Ionicons.glyphMap;
-  label: string;
-  value: number;
-  tint: 'green' | 'amber' | 'purple';
-}) {
-  const tintStyle = tint === 'green'
-    ? styles.summaryGreen
-    : tint === 'amber' ? styles.summaryAmber : styles.summaryPurple;
-  const color = tint === 'green' ? '#15803d' : tint === 'amber' ? '#b45309' : '#7e22ce';
-
-  return (
-    <View style={styles.summaryCard}>
-      <View style={[styles.summaryIcon, tintStyle]}>
-        <Ionicons name={icon} size={16} color={color} />
-      </View>
-      <Text style={styles.summaryValue}>{value}</Text>
-      <Text style={styles.summaryLabel}>{label}</Text>
-    </View>
-  );
-}
 
 function SessionAction({
   icon,

@@ -16,6 +16,7 @@ import { Ionicons } from '@expo/vector-icons';
 import AppHeader from '../components/AppHeader';
 import { colors } from '../theme';
 import GroupAvatar from '../components/GroupAvatar';
+import GroupPreferencePicker from '../components/GroupPreferencePicker';
 import {
   BuddyReport,
   BuddyProfile,
@@ -34,6 +35,12 @@ import {
   GROUP_AVATAR_OPTIONS,
   GroupAvatarColor,
   GroupAvatarIcon,
+  GroupStudyMode,
+  GroupStudyStyle,
+  GroupStudyTime,
+  GROUP_STUDY_MODE_OPTIONS,
+  GROUP_STUDY_STYLE_OPTIONS,
+  GROUP_STUDY_TIME_OPTIONS,
   GroupMember,
   GroupRecord,
   leaveGroup,
@@ -72,6 +79,9 @@ export default function BuddiesDetailScreen({ navigation, route }: any) {
   const [editDescription, setEditDescription] = useState('');
   const [editAvatarIcon, setEditAvatarIcon] = useState<GroupAvatarIcon>('book-outline');
   const [editAvatarColor, setEditAvatarColor] = useState<GroupAvatarColor>('#1a5f7a');
+  const [editStudyStyle, setEditStudyStyle] = useState<GroupStudyStyle>('Visual');
+  const [editPreferredStudyTime, setEditPreferredStudyTime] = useState<GroupStudyTime>('Flexible');
+  const [editStudyMode, setEditStudyMode] = useState<GroupStudyMode>('either');
   const isBuddy = detailRoute.kind === 'buddy';
 
   const loadDetails = useCallback(async (openRating = false) => {
@@ -282,6 +292,9 @@ export default function BuddiesDetailScreen({ navigation, route }: any) {
     setEditDescription(group.description ?? '');
     setEditAvatarIcon(group.avatar_icon ?? 'book-outline');
     setEditAvatarColor(group.avatar_color ?? '#1a5f7a');
+    setEditStudyStyle(group.study_style ?? 'Visual');
+    setEditPreferredStudyTime(group.preferred_study_time ?? 'Flexible');
+    setEditStudyMode(group.study_mode ?? 'either');
     setEditVisible(true);
   };
 
@@ -300,6 +313,9 @@ export default function BuddiesDetailScreen({ navigation, route }: any) {
         description: editDescription.trim(),
         avatar_icon: editAvatarIcon,
         avatar_color: editAvatarColor,
+        study_style: editStudyStyle,
+        preferred_study_time: editPreferredStudyTime,
+        study_mode: editStudyMode,
       });
       setGroup((current) => current ? { ...current, ...updatedGroup } : updatedGroup);
       setEditVisible(false);
@@ -544,6 +560,9 @@ export default function BuddiesDetailScreen({ navigation, route }: any) {
               <Text style={styles.sectionTitle}>About this group</Text>
               <Detail label="Course" value={group.course} />
               <Detail label="Schedule" value={group.schedule} />
+              <Detail label="Study style" value={group.study_style} />
+              <Detail label="Preferred study time" value={group.preferred_study_time} />
+              <Detail label="Study mode" value={group.study_mode?.replace('_', ' ')} />
               <Detail label="Description" value={group.description} />
               <Detail label="Created by" value={group.creator?.name} />
               <Detail label="Members" value={String(group.members ?? members.length)} />
@@ -755,12 +774,16 @@ export default function BuddiesDetailScreen({ navigation, route }: any) {
 
       <Modal visible={editVisible} transparent animationType="slide" onRequestClose={() => setEditVisible(false)}>
         <View style={styles.modalOverlay}>
-          <ScrollView contentContainerStyle={styles.editModalScroll} keyboardShouldPersistTaps="handled">
-            <View style={styles.modalCard}>
-              <Text style={styles.modalTitle}>Edit study group</Text>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>Edit study group</Text>
+            <ScrollView
+              style={styles.editFieldsScroll}
+              contentContainerStyle={styles.editFields}
+              keyboardShouldPersistTaps="handled"
+            >
               <View style={styles.avatarPreview}>
                 <GroupAvatar icon={editAvatarIcon} color={editAvatarColor} size={54} />
-                <Text style={styles.body}>Group avatar</Text>
+                <Text style={styles.body}>Choose the icon for your SNSU department</Text>
               </View>
               <View style={styles.avatarOptions}>
                 {GROUP_AVATAR_OPTIONS.map((option) => (
@@ -773,6 +796,9 @@ export default function BuddiesDetailScreen({ navigation, route }: any) {
                     onPress={() => setEditAvatarIcon(option.icon)}
                   >
                     <Ionicons name={option.icon} size={21} color={editAvatarIcon === option.icon ? '#0d3b4f' : '#64748b'} />
+                    <Text style={[styles.iconOptionLabel, editAvatarIcon === option.icon && styles.iconOptionLabelSelected]}>
+                      {option.shortLabel}
+                    </Text>
                   </TouchableOpacity>
                 ))}
               </View>
@@ -790,6 +816,24 @@ export default function BuddiesDetailScreen({ navigation, route }: any) {
               </View>
               <TextInput value={editName} onChangeText={setEditName} placeholder="Group name" style={styles.input} maxLength={255} />
               <TextInput value={editCourse} onChangeText={setEditCourse} placeholder="Course" style={styles.input} maxLength={255} />
+              <GroupPreferencePicker
+                label="Study style"
+                options={GROUP_STUDY_STYLE_OPTIONS}
+                value={editStudyStyle}
+                onChange={setEditStudyStyle}
+              />
+              <GroupPreferencePicker
+                label="Preferred study time"
+                options={GROUP_STUDY_TIME_OPTIONS}
+                value={editPreferredStudyTime}
+                onChange={setEditPreferredStudyTime}
+              />
+              <GroupPreferencePicker
+                label="Study mode"
+                options={GROUP_STUDY_MODE_OPTIONS}
+                value={editStudyMode}
+                onChange={setEditStudyMode}
+              />
               <TextInput value={editSchedule} onChangeText={setEditSchedule} placeholder="Schedule (optional)" style={styles.input} maxLength={255} />
               <TextInput
                 value={editDescription}
@@ -798,14 +842,21 @@ export default function BuddiesDetailScreen({ navigation, route }: any) {
                 style={[styles.input, styles.descriptionInput]}
                 multiline
               />
-              <TouchableOpacity style={[styles.primaryButton, busy && styles.disabled]} onPress={() => { void saveGroupEdits(); }} disabled={busy}>
+            </ScrollView>
+            <View style={styles.editModalActions}>
+              <TouchableOpacity
+                style={[styles.primaryButton, busy && styles.disabled]}
+                onPress={() => { void saveGroupEdits(); }}
+                disabled={busy}
+                accessibilityRole="button"
+              >
                 <Text style={styles.primaryButtonText}>{busy ? 'Saving…' : 'Save changes'}</Text>
               </TouchableOpacity>
               <TouchableOpacity onPress={() => setEditVisible(false)} disabled={busy}>
                 <Text style={styles.cancelText}>Cancel</Text>
               </TouchableOpacity>
             </View>
-          </ScrollView>
+          </View>
         </View>
       </Modal>
     </View>
@@ -942,9 +993,14 @@ const styles = StyleSheet.create({
   modalOverlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: '#0006' },
   modalCard: { backgroundColor: '#fff', borderTopLeftRadius: 22, borderTopRightRadius: 22, padding: 20, gap: 12, maxHeight: '90%' },
   editModalScroll: { flexGrow: 1, justifyContent: 'flex-end' },
+  editFieldsScroll: { flexShrink: 1 },
+  editFields: { gap: 12, paddingBottom: 2 },
+  editModalActions: { gap: 4, borderTopWidth: 1, borderTopColor: '#e2e8f0', paddingTop: 10 },
   avatarPreview: { alignItems: 'center', gap: 6, paddingVertical: 2 },
   avatarOptions: { flexDirection: 'row', justifyContent: 'center', flexWrap: 'wrap', gap: 10 },
-  iconOption: { width: 40, height: 40, borderRadius: 12, backgroundColor: '#f1f5f9', alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: 'transparent' },
+  iconOption: { width: '30%', minHeight: 58, paddingHorizontal: 3, paddingVertical: 5, borderRadius: 12, backgroundColor: '#f1f5f9', alignItems: 'center', justifyContent: 'center', gap: 2, borderWidth: 2, borderColor: 'transparent' },
+  iconOptionLabel: { color: '#64748b', fontSize: 8, fontWeight: '700', textAlign: 'center' },
+  iconOptionLabelSelected: { color: '#0d3b4f' },
   selectedOption: { borderColor: '#1a5f7a', backgroundColor: '#eaf4f7' },
   colorOption: { width: 28, height: 28, borderRadius: 14, borderWidth: 3, borderColor: '#fff' },
   selectedColor: { borderColor: '#0d3b4f' },

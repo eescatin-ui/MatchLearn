@@ -2,15 +2,44 @@ import { apiClient } from './client';
 import { ApiResponse } from '../../types/auth';
 
 export const GROUP_AVATAR_OPTIONS = [
-  { icon: 'book-outline', label: 'Books' },
-  { icon: 'flask-outline', label: 'Science' },
-  { icon: 'calculator-outline', label: 'Math' },
-  { icon: 'code-slash-outline', label: 'Coding' },
-  { icon: 'bulb-outline', label: 'Ideas' },
-  { icon: 'globe-outline', label: 'Languages' },
+  { icon: 'construct-outline', label: 'Engineering & Architecture', shortLabel: 'Engineering' },
+  { icon: 'laptop-outline', label: 'Information & Computing Sciences', shortLabel: 'Computing' },
+  { icon: 'build-outline', label: 'Industrial Technology', shortLabel: 'Industrial Tech.' },
+  { icon: 'school-outline', label: 'Teacher Education', shortLabel: 'Teacher Ed.' },
+  { icon: 'business-outline', label: 'Business & Hospitality Management', shortLabel: 'Business & Hospitality' },
 ] as const;
 
-export type GroupAvatarIcon = (typeof GROUP_AVATAR_OPTIONS)[number]['icon'];
+type LegacyGroupAvatarIcon =
+  | 'book-outline'
+  | 'flask-outline'
+  | 'calculator-outline'
+  | 'code-slash-outline'
+  | 'bulb-outline'
+  | 'globe-outline';
+export type GroupAvatarIcon = (typeof GROUP_AVATAR_OPTIONS)[number]['icon'] | LegacyGroupAvatarIcon;
+
+export const GROUP_STUDY_STYLE_OPTIONS = [
+  { value: 'Visual', label: 'Visual' },
+  { value: 'Auditory', label: 'Auditory' },
+  { value: 'Reading/Writing', label: 'Reading / Writing' },
+  { value: 'Kinesthetic', label: 'Hands-on' },
+] as const;
+export type GroupStudyStyle = (typeof GROUP_STUDY_STYLE_OPTIONS)[number]['value'];
+
+export const GROUP_STUDY_TIME_OPTIONS = [
+  { value: 'Morning', label: 'Morning' },
+  { value: 'Afternoon', label: 'Afternoon' },
+  { value: 'Evening', label: 'Evening' },
+  { value: 'Flexible', label: 'Flexible' },
+] as const;
+export type GroupStudyTime = (typeof GROUP_STUDY_TIME_OPTIONS)[number]['value'];
+
+export const GROUP_STUDY_MODE_OPTIONS = [
+  { value: 'online', label: 'Online' },
+  { value: 'in_person', label: 'In person' },
+  { value: 'either', label: 'Either' },
+] as const;
+export type GroupStudyMode = (typeof GROUP_STUDY_MODE_OPTIONS)[number]['value'];
 
 export const GROUP_AVATAR_COLORS = ['#1a5f7a', '#15803d', '#7c3aed', '#c2410c', '#be123c', '#1d4ed8'] as const;
 export type GroupAvatarColor = (typeof GROUP_AVATAR_COLORS)[number];
@@ -23,6 +52,10 @@ export interface GroupRecord {
   avatar_color?: GroupAvatarColor;
   schedule?: string;
   description?: string | null;
+  study_style?: GroupStudyStyle | null;
+  preferred_study_time?: GroupStudyTime | null;
+  study_mode?: GroupStudyMode | null;
+  compatibility_score?: number;
   members?: number;
   role?: string;
   created_by?: number;
@@ -117,6 +150,9 @@ export const createGroup = async (payload: {
   course: string;
   avatar_icon: GroupAvatarIcon;
   avatar_color: GroupAvatarColor;
+  study_style: GroupStudyStyle;
+  preferred_study_time: GroupStudyTime;
+  study_mode: GroupStudyMode;
   schedule?: string;
   description?: string;
 }): Promise<GroupRecord> => {
@@ -135,6 +171,9 @@ export const updateGroup = async (
     course: string;
     avatar_icon: GroupAvatarIcon;
     avatar_color: GroupAvatarColor;
+    study_style: GroupStudyStyle;
+    preferred_study_time: GroupStudyTime;
+    study_mode: GroupStudyMode;
     schedule: string;
     description: string;
   }

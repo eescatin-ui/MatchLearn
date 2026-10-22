@@ -33,10 +33,34 @@ export interface AcademicCatalog {
   weaknesses: { id: number; name: string }[];
 }
 
+const ACADEMIC_CATALOG_CACHE_TTL_MS = 5 * 60 * 1000;
+let cachedAcademicCatalog: AcademicCatalog | null = null;
+let academicCatalogCachedAt = 0;
+let academicCatalogRequest: Promise<AcademicCatalog> | null = null;
+
 export const fetchAcademicCatalog = async (): Promise<AcademicCatalog> => {
-  const response = await apiClient.get<{ data?: AcademicCatalog }>('/catalog');
-  if (!response.data?.data) {
-    throw new Error('The server returned an invalid academic catalog.');
+  if (
+    cachedAcademicCatalog
+    && Date.now() - academicCatalogCachedAt < ACADEMIC_CATALOG_CACHE_TTL_MS
+  ) {
+    return cachedAcademicCatalog;
   }
-  return response.data.data;
+
+  if (!academicCatalogRequest) {
+    academicCatalogRequest = apiClient.get<{ data?: AcademicCatalog }>('/catalog')
+      .then((response) => {
+        if (!response.data?.data) {
+          throw new Error('The server returned an invalid academic catalog.');
+        }
+
+        cachedAcademicCatalog = response.data.data;
+        academicCatalogCachedAt = Date.now();
+        return cachedAcademicCatalog;
+      })
+      .finally(() => {
+        academicCatalogRequest = null;
+      });
+  }
+
+  return academicCatalogRequest;
 };

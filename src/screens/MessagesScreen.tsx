@@ -44,6 +44,21 @@ export default function MessagesScreen({ navigation }: any) {
     );
   }, [chats, query]);
 
+  const openConversation = (chat: ConversationRecord) => {
+    setChats((current) => current.map((item) => (
+      item.type === chat.type
+        && (item.type === 'group'
+          ? item.group_id ?? item.id
+          : item.direct_conversation_id ?? item.id)
+          === (chat.type === 'group'
+            ? chat.group_id ?? chat.id
+            : chat.direct_conversation_id ?? chat.id)
+        ? { ...item, unread_count: 0 }
+        : item
+    )));
+    navigation.navigate('Chat', { chat });
+  };
+
   return (
     <View style={styles.frame}>
       <ScrollView style={styles.content} contentContainerStyle={styles.contentInner}>
@@ -81,11 +96,15 @@ export default function MessagesScreen({ navigation }: any) {
             <Text style={styles.emptyText}>{query ? 'No conversations match your search.' : 'No conversations yet. Join a study group to start chatting.'}</Text>
           ) : (
             <View style={styles.chatTable}>
-              {filteredChats.map((chat, index) => (
+              {filteredChats.map((chat, index) => {
+                const previewSeparator = chat.lastMessage.indexOf(': ');
+                const hasUnread = (chat.unread_count ?? 0) > 0;
+
+                return (
                 <TouchableOpacity
                   key={`${chat.type}:${chat.type === 'group' ? chat.group_id ?? chat.id : chat.direct_conversation_id ?? chat.id}`}
                   style={[styles.chatItem, index === filteredChats.length - 1 && styles.chatItemLast]}
-                  onPress={() => navigation.navigate('Chat', { chat })}
+                  onPress={() => openConversation(chat)}
                 >
                   {chat.type === 'direct' && chat.profile_photo_url ? (
                     <Image source={{ uri: chat.profile_photo_url }} style={styles.avatarCircle} />
@@ -107,11 +126,21 @@ export default function MessagesScreen({ navigation }: any) {
                       <View style={[styles.typeBadge, chat.type === 'group' ? styles.groupBadge : styles.buddyBadge]}>
                         <Text style={styles.typeBadgeText}>{chat.type === 'group' ? 'Group' : 'Buddy'}</Text>
                       </View>
-                      <Text
-                        style={[styles.chatPreview, (chat.unread_count ?? 0) > 0 && styles.unreadChatPreview]}
-                        numberOfLines={1}
-                      >
-                        {chat.lastMessage || 'No messages yet'}
+                      <Text style={styles.chatPreview} numberOfLines={1}>
+                        {previewSeparator >= 0 ? (
+                          <>
+                            <Text style={hasUnread && styles.unreadPreviewSender}>
+                              {chat.lastMessage.slice(0, previewSeparator + 2)}
+                            </Text>
+                            <Text style={hasUnread && styles.unreadChatPreview}>
+                              {chat.lastMessage.slice(previewSeparator + 2)}
+                            </Text>
+                          </>
+                        ) : (
+                          <Text style={hasUnread && styles.unreadChatPreview}>
+                            {chat.lastMessage || 'No messages yet'}
+                          </Text>
+                        )}
                       </Text>
                     </View>
                   </View>
@@ -122,7 +151,8 @@ export default function MessagesScreen({ navigation }: any) {
                   ) : null}
                   <Ionicons name="chevron-forward" size={17} color="#94a3b8" />
                 </TouchableOpacity>
-              ))}
+                );
+              })}
             </View>
           )}
         </View>
@@ -303,6 +333,10 @@ const styles = StyleSheet.create({
   unreadChatPreview: {
     color: colors.navy,
     fontWeight: '800',
+  },
+  unreadPreviewSender: {
+    color: colors.navy,
+    fontWeight: '400',
   },
   unreadBadge: {
     minWidth: 20,

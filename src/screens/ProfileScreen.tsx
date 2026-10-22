@@ -14,7 +14,7 @@ import {
 import { Alert } from '../components/AppAlert';
 import * as ImagePicker from 'expo-image-picker';
 import { useAuth } from '../context/AuthContext';
-import { ProfileResponse, profileApi, StudyCourseInput, StudyMode } from '../services/api/profile';
+import { profileApi, StudyCourseInput, StudyMode } from '../services/api/profile';
 import { AcademicCatalog, fetchAcademicCatalog } from '../services/api/courses';
 import AppHeader from '../components/AppHeader';
 import { Ionicons } from '@expo/vector-icons';
@@ -75,11 +75,41 @@ const studyStyleDescriptions: Record<string, string> = {
 };
 const weekdays = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
 const snsUCampusDepartments = new Set([
-  'College of Computing and Information Sciences',
-  'College of Engineering',
-  'College of Arts and Sciences',
+  'College of Engineering and Architecture',
+  'College of Information and Computing Sciences',
+  'College of Industrial Technology',
   'College of Teacher Education',
-  'College of Technology',
+  'College of Business and Hospitality Management',
+]);
+const excludedDepartments = new Set([
+  'Engineering Technology',
+  'Information Technology',
+]);
+const snsUCampusPrograms = new Set([
+  'Bachelor of Science in Civil Engineering (BSCE)',
+  'Bachelor of Science in Electrical Engineering (BSEE)',
+  'Bachelor of Science in Computer Engineering (BSCpE)',
+  'Bachelor of Science in Electronics Engineering (BSEC / ECE)',
+  'Bachelor of Science in Information Technology (BSIT)',
+  'Bachelor of Science in Computer Science (BSCS)',
+  'Bachelor of Science in Information Systems (BSIS)',
+  'Bachelor of Industrial Technology (BIT) - Automotive',
+  'Bachelor of Industrial Technology (BIT) - Electrical',
+  'Bachelor of Industrial Technology (BIT) - Electronics',
+  'Bachelor of Industrial Technology (BIT) - Mechanical',
+  'Bachelor of Industrial Technology (BIT) - Drafting',
+  'Bachelor of Industrial Technology (BIT) - Civil',
+  'Bachelor of Industrial Technology (BIT) - Foods',
+  'Bachelor of Industrial Technology (BIT) - Welding and Fabrication',
+  'Bachelor of Industrial Technology (BIT) - Refrigeration and Air-Conditioning',
+  'Associate in Industrial Technology (AIT)',
+  'Bachelor of Elementary Education (BEEd)',
+  'Bachelor of Secondary Education (BSEd) - English',
+  'Bachelor of Secondary Education (BSEd) - Mathematics',
+  'Bachelor of Secondary Education (BSEd) - Science/Biological/Physical Science',
+  'Bachelor of Secondary Education (BSEd) - Filipino',
+  'Bachelor of Technical-Vocational Teacher Education (BTVTED)',
+  'Bachelor of Science in Hospitality Management (BSHM) / Hotel and Restaurant Management',
 ]);
 
 const fieldOptions: Record<string, string[]> = {
@@ -131,6 +161,7 @@ export default function ProfileScreen({
   );
   const [profileSaved, setProfileSaved] = useState(false);
   const [profileCheckUserId, setProfileCheckUserId] = useState<number | null>(null);
+  const profileLoadInFlightKey = useRef<string | null>(null);
   const [activeSection, setActiveSection] = useState<ProfileSection>('personal');
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [settingsVisible, setSettingsVisible] = useState(false);
@@ -153,14 +184,16 @@ export default function ProfileScreen({
   const [courseDraft, setCourseDraft] = useState('');
   const [availabilityDays, setAvailabilityDays] = useState<string[]>([]);
   const [savedFormSnapshot, setSavedFormSnapshot] = useState<string | null>(null);
+  const institution = user?.email?.toLowerCase().endsWith('@ssct.edu.ph') ? 'SSCT' : 'SNSU';
   const campusDepartments = catalog.departments.filter((department) =>
-    snsUCampusDepartments.has(department.name)
+    !excludedDepartments.has(department.name)
+      && (institution === 'SSCT' || snsUCampusDepartments.has(department.name))
   );
   const selectedDepartmentId = campusDepartments.find(
     (department) => department.name === profile.department
   )?.id;
-  const institution = 'SNSU';
   const profileCheckReady = currentUserId !== undefined && profileCheckUserId === currentUserId;
+  const isLoadingProfile = currentUserId !== undefined && profileCheckUserId !== currentUserId;
   const getFormSnapshot = useCallback(() => createProfileFormSnapshot(
     displayName,
     profile,
@@ -185,19 +218,21 @@ export default function ProfileScreen({
   };
 
   useEffect(() => {
-    const loadProfile = async (userId: number) => {
+    const loadProfile = async (userId: number, requestKey: string) => {
       setSavedFormSnapshot(null);
       try {
-        const academicCatalog = await fetchAcademicCatalog();
-        setCatalog(academicCatalog);
-        let response: ProfileResponse | null = null;
-        try {
-          response = await profileApi.getProfile();
-        } catch (profileError) {
-          if ((profileError as { status?: number })?.status !== 404) {
+        const [academicCatalog, response] = await Promise.all([
+          fetchAcademicCatalog(),
+          profileApi.getProfile().catch((profileError: unknown) => {
+            if ((profileError as { status?: number })?.status === 404) {
+              return null;
+            }
             throw profileError;
-          }
-        }
+          }),
+        ]);
+        if (profileLoadInFlightKey.current !== requestKey) return;
+
+        setCatalog(academicCatalog);
         const profileData = response?.data?.profile ?? null;
 
         if (!profileData) {
@@ -226,7 +261,8 @@ export default function ProfileScreen({
         setProfilePhotoUrl(profileData.profile_photo_url ?? null);
         const mappedProfile = profileApi.mapProfileToForm(profileData);
         const profileDepartment = academicCatalog.departments.find(
-          (department) => department.name === mappedProfile.department && snsUCampusDepartments.has(department.name)
+          (department) => department.name === mappedProfile.department
+            && (institution === 'SSCT' || snsUCampusDepartments.has(department.name))
         );
         const profileProgram = profileDepartment?.programs.some(
           (program) => program.name === mappedProfile.program
@@ -279,17 +315,28 @@ export default function ProfileScreen({
         ));
         setProfileCheckUserId(userId);
       } catch (error) {
+        if (profileLoadInFlightKey.current !== requestKey) return;
+
         Alert.alert(
           'Could not load profile options',
           error instanceof Error ? error.message : 'Please check your connection and try again.'
         );
+        setProfileCheckUserId(userId);
       }
     };
 
     if (currentUserId) {
-      void loadProfile(currentUserId);
+      const requestKey = `${currentUserId}:${institution}`;
+      if (profileLoadInFlightKey.current === requestKey) return;
+
+      profileLoadInFlightKey.current = requestKey;
+      void loadProfile(currentUserId, requestKey).finally(() => {
+        if (profileLoadInFlightKey.current === requestKey) {
+          profileLoadInFlightKey.current = null;
+        }
+      });
     }
-  }, [currentUserId]);
+  }, [currentUserId, institution]);
 
   const handlePickProfilePhoto = async () => {
     if (!profileSaved || uploadingPhoto) return;
@@ -343,9 +390,11 @@ export default function ProfileScreen({
   const getFieldOptions = (field: keyof typeof defaultProfile): string[] => {
     if (field === 'department') return campusDepartments.map((department) => department.name);
     if (field === 'program') {
-      return campusDepartments
-        .find((department) => department.id === selectedDepartmentId)
-        ?.programs.map((program) => program.name) ?? [];
+      const department = campusDepartments.find((item) => item.id === selectedDepartmentId);
+      const programs = department?.programs.map((program) => program.name) ?? [];
+      return snsUCampusDepartments.has(department?.name ?? '')
+        ? programs.filter((program) => snsUCampusPrograms.has(program))
+        : programs;
     }
     if (field === 'studyStyle') return studyStyleOptions;
     return fieldOptions[field] ?? [];
@@ -605,6 +654,13 @@ export default function ProfileScreen({
           navigation={navigation}
           onSettingsPress={() => setSettingsVisible(true)}
         />
+
+        {isLoadingProfile ? (
+          <View style={styles.profileLoading} accessibilityLiveRegion="polite">
+            <ActivityIndicator size="small" color={colors.teal} />
+            <Text style={styles.profileLoadingText}>Loading your profile...</Text>
+          </View>
+        ) : null}
 
         <View style={styles.profileHero}>
           <View style={styles.profileHeroPhoto}>
@@ -974,6 +1030,23 @@ const styles = StyleSheet.create({
     paddingBottom: 32,
   },
   profileHero: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: colors.surface, borderColor: colors.border, borderWidth: 1, borderRadius: 11, padding: 15, marginBottom: 16 },
+  profileLoading: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    marginBottom: 14,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: colors.heroBorder,
+    backgroundColor: colors.surface,
+  },
+  profileLoadingText: {
+    color: colors.teal,
+    fontSize: 13,
+    fontWeight: '600',
+  },
   profileHeroPhoto: { width: 58, height: 58, borderRadius: 12, backgroundColor: colors.tealLight, overflow: 'hidden', alignItems: 'center', justifyContent: 'center' },
   profileHeroImage: { width: '100%', height: '100%' },
   profileHeroInitials: { color: colors.teal, fontSize: 18, fontWeight: '800' },
