@@ -1,20 +1,31 @@
+import React from 'react';
 import { StatusBar } from 'expo-status-bar';
-import { StyleSheet, Text, View } from 'react-native';
+import { PaperProvider } from 'react-native-paper';
+import { MD3LightTheme } from 'react-native-paper';
+import { AuthProvider } from './src/context/AuthContext';
+import { AppAlertProvider } from './src/components/AppAlert';
+import RootNavigator from './src/navigation/RootNavigator';
+import { colors } from './src/theme';
+
+const appTheme = {
+  ...MD3LightTheme,
+  colors: {
+    ...MD3LightTheme.colors,
+    primary: colors.teal,
+    background: colors.page,
+    surface: colors.surface,
+    onSurface: colors.text,
+  },
+};
 
 export default function App() {
   return (
-    <View style={styles.container}>
-      <Text>Open up App.tsx to start working on your app!</Text>
-      <StatusBar style="auto" />
-    </View>
+    <PaperProvider theme={appTheme}>
+      <AuthProvider>
+        <RootNavigator />
+        <AppAlertProvider />
+        <StatusBar style="auto" />
+      </AuthProvider>
+    </PaperProvider>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#fff',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-});
