@@ -8,17 +8,15 @@ interface AuthContextType {
   token: string | null;
   isLoading: boolean;
   isSignedIn: boolean;
-  register: (
-    name: string,
-    email: string,
-    password: string,
-    passwordConfirmation: string
-  ) => Promise<void>;
-  login: (email: string, password: string) => Promise<void>;
+  loginWithGoogle: (idToken: string, name?: string) => Promise<void>;
   logout: () => Promise<void>;
   logoutAll: () => Promise<void>;
+  deleteAccount: () => Promise<void>;
   checkAuth: () => Promise<void>;
-  updateUserProfile: (updates: { name?: string; profilePhotoUrl?: string | null }) => void;
+  updateUserProfile: (updates: {
+    name?: string;
+    profilePhotoUrl?: string | null;
+  }) => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -66,51 +64,20 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     void Promise.resolve().then(checkAuth);
   }, [checkAuth]);
 
-  const register = async (
-    name: string,
-    email: string,
-    password: string,
-    passwordConfirmation: string
-  ) => {
-    const response = await authApi.register(
-      name,
-      email,
-      password,
-      passwordConfirmation
-    );
+  const loginWithGoogle = async (idToken: string, name?: string) => {
+    const response = await authApi.loginWithGoogle(idToken, name);
 
     if (!response.success) {
       throw new Error(response.message);
     }
 
     if (!response.data?.user || !response.data.token) {
-      throw new Error('Registration succeeded but no authentication token was received.');
+      throw new Error('Google login succeeded but no authentication token was received.');
     }
 
     await storageService.setToken(response.data.token);
     setUser(response.data.user);
     setToken(response.data.token);
-  };
-
-  const login = async (email: string, password: string) => {
-    const response = await authApi.login(email, password);
-
-    if (!response.success) {
-      throw new Error(response.message);
-    }
-
-    if (response.data?.user && response.data?.token) {
-      const newToken = response.data.token;
-
-      // Save token to storage
-      await storageService.setToken(newToken);
-
-      // Update React state
-      setUser(response.data.user);
-      setToken(newToken);
-    } else {
-      throw new Error('Login successful but no authentication token was received.');
-    }
   };
 
   const logout = async () => {
@@ -137,7 +104,23 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   };
 
-  const updateUserProfile = (updates: { name?: string; profilePhotoUrl?: string | null }) => {
+  const deleteAccount = async () => {
+    await authApi.deleteAccount();
+    setUser(null);
+    setToken(null);
+
+    try {
+      await storageService.removeToken();
+    } catch (error) {
+      console.error('Account deleted but failed to clear the local auth token:', error);
+      throw new Error('Your account was deleted, but this device could not clear its saved sign-in. Restart the app.');
+    }
+  };
+
+  const updateUserProfile = (updates: {
+    name?: string;
+    profilePhotoUrl?: string | null;
+  }) => {
     setUser((current) => {
       if (!current) return current;
       const updated = { ...current };
@@ -155,10 +138,10 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     token,
     isLoading,
     isSignedIn: !!token,
-    register,
-    login,
+    loginWithGoogle,
     logout,
     logoutAll,
+    deleteAccount,
     checkAuth,
     updateUserProfile,
   };

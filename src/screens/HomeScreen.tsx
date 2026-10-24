@@ -10,8 +10,8 @@ import { MatchRecord } from '../types/match';
 import { fetchBuddyConnections } from '../services/api/buddies';
 import { fetchReviews } from '../services/api/reviews';
 import { profileApi } from '../services/api/profile';
-import { Alert } from '../components/AppAlert';
 import AppHeader from '../components/AppHeader';
+import UserRatingBadge from '../components/UserRatingBadge';
 import GroupAvatar from '../components/GroupAvatar';
 import { getMatchScoreColors } from '../utils/matchScoreColors';
 import { colors } from '../theme';
@@ -35,15 +35,7 @@ export default function HomeScreen({ navigation }: any) {
     let active = true;
 
     const promptToCompleteProfile = () => {
-      if (!active) return;
-      Alert.alert(
-        'Complete your study profile',
-        'Add your program, year level, courses, study preferences, and availability to help us find better study matches for you.',
-        [
-          { text: 'Not now', style: 'cancel' },
-          { text: 'OK', onPress: () => navigation.navigate('Profile') },
-        ]
-      );
+      if (active) navigation.navigate('Profile');
     };
 
     const checkProfile = async () => {
@@ -120,7 +112,7 @@ export default function HomeScreen({ navigation }: any) {
 
         <View style={styles.statsGrid}>
           <View style={[styles.statCard, styles.compactStatCard]}>
-            <View style={styles.statCardTopline}>
+            <View style={[styles.statCardTopline, styles.statCountTopline]}>
               <View style={[styles.statIcon, styles.buddyStatIcon]}>
                 <Ionicons name="people-outline" size={18} color="#0369a1" />
               </View>
@@ -130,7 +122,7 @@ export default function HomeScreen({ navigation }: any) {
           </View>
 
           <View style={[styles.statCard, styles.compactStatCard]}>
-            <View style={styles.statCardTopline}>
+            <View style={[styles.statCardTopline, styles.statCountTopline]}>
               <View style={[styles.statIcon, styles.groupStatIcon]}>
                 <Ionicons name="people-circle-outline" size={19} color="#15803d" />
               </View>
@@ -201,15 +193,10 @@ export default function HomeScreen({ navigation }: any) {
                 ) : (
                   <Text style={styles.avatarTextSmall}>{match.matched_user.name.slice(0, 2).toUpperCase()}</Text>
                 )}
-                {match.matched_user.average_rating !== null ? (
-                  <View
-                    style={styles.ratingBadge}
-                    accessibilityLabel={`Rated ${match.matched_user.average_rating.toFixed(1)} out of 5 from ${match.matched_user.ratings_count} ratings`}
-                  >
-                    <Text style={styles.matchRatingValue}>{Math.round(match.matched_user.average_rating)}</Text>
-                    <Ionicons name="star" size={10} color="#d97706" />
-                  </View>
-                ) : null}
+                <UserRatingBadge
+                  averageRating={match.matched_user.average_rating}
+                  ratingsCount={match.matched_user.ratings_count}
+                />
               </View>
 
               <View style={styles.itemInfo}>
@@ -246,8 +233,8 @@ export default function HomeScreen({ navigation }: any) {
               key={group.id}
               style={[styles.listItem, index === items.length - 1 && styles.listItemLast]}
               onPress={() => navigation.navigate('Buddies', {
-                screen: 'BuddyGroupDetail',
-                params: { kind: 'group', id: group.id, name: group.name },
+                screen: 'BuddiesTab',
+                params: { openGroupId: group.id },
               })}
               accessibilityRole="button"
               accessibilityLabel={`View ${group.name} group details`}
@@ -390,6 +377,7 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   statCardTopline: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 5 },
+  statCountTopline: { justifyContent: 'flex-start', gap: 12 },
   statIcon: {
     width: 29,
     height: 29,
@@ -498,8 +486,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
   matchMeta: { alignItems: 'flex-end', gap: 5 },
-  ratingBadge: { position: 'absolute', top: -5, right: -6, minWidth: 27, height: 18, paddingHorizontal: 4, borderRadius: 9, backgroundColor: '#fffbeb', borderWidth: 1, borderColor: '#ffffff', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 2, zIndex: 1 },
-  matchRatingValue: { color: '#92400e', fontSize: 11, fontWeight: '800' },
   itemDetail: {
     color: colors.muted,
     fontSize: 11,

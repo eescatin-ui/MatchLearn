@@ -11,6 +11,7 @@ import {
   View,
 } from 'react-native';
 import { Alert } from '../components/AppAlert';
+import UserRatingBadge from '../components/UserRatingBadge';
 import { Ionicons } from '@expo/vector-icons';
 import AppHeader from '../components/AppHeader';
 import { colors } from '../theme';
@@ -144,12 +145,15 @@ export default function ReviewsScreen({ navigation, route }: any) {
         ) : selectedBuddyId ? (
           <>
             <View style={styles.buddyProfile}>
-              <View style={styles.buddyProfileAvatar}>
-                {buddyPhoto ? (
-                  <Image source={{ uri: buddyPhoto }} style={styles.buddyProfilePhoto} accessibilityLabel={`${buddyName}'s profile photo`} />
-                ) : (
-                  <Text style={styles.buddyProfileInitials}>{buddyName.slice(0, 2).toUpperCase()}</Text>
-                )}
+              <View style={styles.buddyProfileAvatarWrap}>
+                <View style={styles.buddyProfileAvatar}>
+                  {buddyPhoto ? (
+                    <Image source={{ uri: buddyPhoto }} style={styles.buddyProfilePhoto} accessibilityLabel={`${buddyName}'s profile photo`} />
+                  ) : (
+                    <Text style={styles.buddyProfileInitials}>{buddyName.slice(0, 2).toUpperCase()}</Text>
+                  )}
+                </View>
+                <UserRatingBadge averageRating={averageRating} ratingsCount={ratingsCount} />
               </View>
               <View style={styles.buddyProfileCopy}>
                 <Text style={styles.buddyProfileName}>{buddyName}</Text>
@@ -242,7 +246,8 @@ export default function ReviewsScreen({ navigation, route }: any) {
                 <View key={review.id} style={styles.reviewCard}>
                   <View style={styles.reviewHeading}>
                     <View style={styles.reviewIdentity}>
-                      <View style={styles.reviewerAvatar}>
+                      <View style={styles.reviewerAvatarWrap}>
+                        <View style={styles.reviewerAvatar}>
                         {review.reviewer_profile_photo_url ? (
                           <Image
                             source={{ uri: review.reviewer_profile_photo_url }}
@@ -252,6 +257,11 @@ export default function ReviewsScreen({ navigation, route }: any) {
                         ) : (
                           <Text style={styles.reviewerInitial}>{review.reviewer_name.slice(0, 1).toUpperCase()}</Text>
                         )}
+                        </View>
+                        <UserRatingBadge
+                          averageRating={review.reviewer_average_rating}
+                          ratingsCount={review.reviewer_ratings_count}
+                        />
                       </View>
                       <View>
                         <Text style={styles.cardTitle}>{review.reviewer_name}</Text>
@@ -316,16 +326,19 @@ export default function ReviewsScreen({ navigation, route }: any) {
                   accessibilityRole="button"
                   accessibilityLabel={`${buddy.my_rating ? 'Edit rating for' : 'Rate'} ${buddy.name}`}
                 >
-                  <View style={styles.buddyAvatar}>
-                    {buddy.profile_photo_url ? (
-                      <Image
-                        source={{ uri: buddy.profile_photo_url }}
-                        style={styles.personPhoto}
-                        accessibilityLabel={`${buddy.name}'s profile photo`}
-                      />
-                    ) : (
-                      <Text style={styles.buddyInitial}>{buddy.name.slice(0, 1).toUpperCase()}</Text>
-                    )}
+                  <View style={styles.buddyAvatarWrap}>
+                    <View style={styles.buddyAvatar}>
+                      {buddy.profile_photo_url ? (
+                        <Image
+                          source={{ uri: buddy.profile_photo_url }}
+                          style={styles.personPhoto}
+                          accessibilityLabel={`${buddy.name}'s profile photo`}
+                        />
+                      ) : (
+                        <Text style={styles.buddyInitial}>{buddy.name.slice(0, 1).toUpperCase()}</Text>
+                      )}
+                    </View>
+                    <UserRatingBadge averageRating={buddy.average_rating} ratingsCount={buddy.ratings_count} />
                   </View>
                   <View style={styles.buddyCopy}>
                     <Text style={styles.cardTitle}>{buddy.name}</Text>
@@ -358,7 +371,8 @@ export default function ReviewsScreen({ navigation, route }: any) {
                 <View key={review.id} style={styles.reviewCard}>
                   <View style={styles.reviewHeading}>
                     <View style={styles.reviewIdentity}>
-                      <View style={styles.reviewerAvatar}>
+                      <View style={styles.reviewerAvatarWrap}>
+                        <View style={styles.reviewerAvatar}>
                         {review.reviewer_profile_photo_url ? (
                           <Image
                             source={{ uri: review.reviewer_profile_photo_url }}
@@ -368,6 +382,11 @@ export default function ReviewsScreen({ navigation, route }: any) {
                         ) : (
                           <Text style={styles.reviewerInitial}>{review.reviewer_name.slice(0, 1).toUpperCase()}</Text>
                         )}
+                        </View>
+                        <UserRatingBadge
+                          averageRating={review.reviewer_average_rating}
+                          ratingsCount={review.reviewer_ratings_count}
+                        />
                       </View>
                       <View>
                         <Text style={styles.cardTitle}>{review.reviewer_name}</Text>
@@ -428,6 +447,7 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
   },
   buddyProfile: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: '#fff', padding: 14, borderRadius: 12, borderWidth: 1, borderColor: colors.border },
+  buddyProfileAvatarWrap: { width: 54, height: 54, position: 'relative' },
   buddyProfileAvatar: { width: 54, height: 54, borderRadius: 17, backgroundColor: colors.tealLight, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
   buddyProfilePhoto: { width: '100%', height: '100%' },
   buddyProfileInitials: { color: colors.teal, fontSize: 17, fontWeight: '800' },
@@ -503,6 +523,7 @@ const styles = StyleSheet.create({
   reviewCard: { backgroundColor: '#fff', borderRadius: 12, padding: 15, gap: 12, borderWidth: 1, borderColor: colors.border },
   reviewHeading: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
   reviewIdentity: { flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 },
+  reviewerAvatarWrap: { width: 38, height: 38, position: 'relative' },
   reviewerAvatar: { width: 38, height: 38, borderRadius: 13, backgroundColor: '#e8f1f5', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
   personPhoto: { width: '100%', height: '100%', borderRadius: 13 },
   reviewerInitial: { color: '#1a5f7a', fontSize: 15, fontWeight: '800' },
@@ -515,6 +536,7 @@ const styles = StyleSheet.create({
   emptyTitle: { color: '#0d3b4f', fontSize: 15, fontWeight: '800' },
   emptyInline: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: '#f8fafc', padding: 14, borderRadius: 14 },
   buddyOption: { flexDirection: 'row', alignItems: 'center', gap: 11, paddingVertical: 12, borderTopWidth: 1, borderTopColor: '#eef2f6' },
+  buddyAvatarWrap: { width: 42, height: 42, position: 'relative' },
   buddyAvatar: { width: 42, height: 42, borderRadius: 15, backgroundColor: '#e8f1f5', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
   buddyInitial: { color: '#1a5f7a', fontSize: 16, fontWeight: '800' },
   buddyCopy: { flex: 1, gap: 3 },

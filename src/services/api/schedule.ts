@@ -9,6 +9,8 @@ export interface StudySessionRecord {
   target_type: 'buddy' | 'group';
   other_user_name: string;
   other_user_profile_photo_url: string | null;
+  other_user_average_rating: number | null;
+  other_user_ratings_count: number;
   group_avatar_icon: GroupAvatarIcon | null;
   group_avatar_color: GroupAvatarColor | null;
   topic: string;
@@ -55,7 +57,13 @@ export const updateStudySessionStatus = async (
 
 export const updateStudySessionDetails = async (
   id: number,
-  payload: { topic: string; starts_at: string; ends_at: string; location: string }
+  payload: {
+    topic: string;
+    starts_at: string;
+    ends_at: string;
+    location: string;
+    status?: StudySessionRecord['status'];
+  }
 ): Promise<StudySessionRecord> => {
   const response = await apiClient.patch<SessionResponse>(`/sessions/${id}`, payload);
   const session = response.data.data?.session;

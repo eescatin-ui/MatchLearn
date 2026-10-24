@@ -1,13 +1,13 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { NavigationContainer, TabActions } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../context/AuthContext';
 
 import SplashScreen from '../screens/auth/SplashScreen';
 import LoginScreen from '../screens/auth/LoginScreen';
-import RegisterScreen from '../screens/auth/RegisterScreen';
 import HomeScreen from '../screens/HomeScreen';
 import DiscoverScreen from '../screens/discover/DiscoverScreen';
 import MatchDetailScreen from '../screens/discover/MatchDetailScreen';
@@ -31,6 +31,11 @@ const Tab = createBottomTabNavigator();
 interface ProfileLeaveGuard {
   hasUnsavedChanges: boolean;
   confirmLeave: (onLeave: () => void) => void;
+}
+
+interface ProfileCompletionGuard {
+  isOnboarding: boolean;
+  warn: () => void;
 }
 
 interface NavigationBadges {
@@ -92,7 +97,10 @@ function BuddiesStack() {
 
 function AppStack() {
   const { user } = useAuth();
+  const insets = useSafeAreaInsets();
   const [profileLeaveGuard, setProfileLeaveGuard] = useState<ProfileLeaveGuard | null>(null);
+  const [profileCompletionGuard, setProfileCompletionGuard] = useState<ProfileCompletionGuard | null>(null);
+  const seenDiscoverMatchIds = useRef(new Set<number>());
   const [badges, setBadges] = useState<NavigationBadges>({
     discover: 0,
     sessions: 0,
@@ -100,7 +108,7 @@ function AppStack() {
     buddies: 0,
   });
 
-  const refreshBadges = useCallback(async () => {
+  const refreshBadges = useCallback(async (markDiscoverMatchesSeen = false) => {
     if (!user) return;
 
     try {
@@ -110,8 +118,15 @@ function AppStack() {
         fetchConversations(),
         fetchBuddyConnections(),
       ]);
+      if (markDiscoverMatchesSeen) {
+        matches
+          .filter((match) => match.compatibility_score >= 50)
+          .forEach((match) => seenDiscoverMatchIds.current.add(match.id));
+      }
       setBadges({
-        discover: matches.filter((match) => match.compatibility_score >= 50).length,
+        discover: matches.filter(
+          (match) => match.compatibility_score >= 50 && !seenDiscoverMatchIds.current.has(match.id)
+        ).length,
         sessions: sessions.filter(
           (session) => session.status === 'pending' && !session.is_past && session.host_user_id !== user.id
         ).length,
@@ -138,6 +153,12 @@ function AppStack() {
 
   const guardedTabListeners = (targetRouteName: string) => ({ navigation }: any) => ({
     tabPress: (event: { preventDefault: () => void }) => {
+      if (targetRouteName !== 'Profile' && profileCompletionGuard?.isOnboarding) {
+        event.preventDefault();
+        profileCompletionGuard.warn();
+        return;
+      }
+
       const state = navigation.getState();
       if (state.routes[state.index]?.name !== 'Profile') return;
 
@@ -154,6 +175,10 @@ function AppStack() {
     setProfileLeaveGuard(guard);
   }, []);
 
+  const registerProfileCompletionGuard = useCallback((guard: ProfileCompletionGuard | null) => {
+    setProfileCompletionGuard(guard);
+  }, []);
+
   return (
     <Tab.Navigator
       screenOptions={({ route }) => ({
@@ -164,8 +189,8 @@ function AppStack() {
           backgroundColor: colors.surface,
           borderTopWidth: 1,
           borderTopColor: colors.border,
-          height: 68,
-          paddingBottom: 6,
+          height: 68 + insets.bottom,
+          paddingBottom: Math.max(insets.bottom, 6),
           paddingTop: 6,
           elevation: 8,
           shadowColor: '#0f172a',
@@ -198,7 +223,10 @@ function AppStack() {
         }}
         listeners={({ navigation }) => ({
           ...guardedTabListeners('Discover')({ navigation }),
-          focus: () => { void refreshBadges(); },
+          focus: () => {
+            setBadges((current) => ({ ...current, discover: 0 }));
+            void refreshBadges(true);
+          },
         })}
       />
       <Tab.Screen
@@ -243,6 +271,7 @@ function AppStack() {
           <ProfileScreen
             {...screenProps}
             registerLeaveGuard={registerProfileLeaveGuard}
+            registerCompletionGuard={registerProfileCompletionGuard}
           />
         )}
       </Tab.Screen>
@@ -263,7 +292,6 @@ function AuthStack() {
   return (
     <Stack.Navigator screenOptions={{ headerShown: false }}>
       <Stack.Screen name="Login" component={LoginScreen} />
-      <Stack.Screen name="Register" component={RegisterScreen} />
     </Stack.Navigator>
   );
 }

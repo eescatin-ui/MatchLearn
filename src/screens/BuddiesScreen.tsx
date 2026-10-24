@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Image,
@@ -28,6 +28,7 @@ import {
   respondToGroupJoinRequest,
 } from '../services/api/groups';
 import GroupAvatar from '../components/GroupAvatar';
+import UserRatingBadge from '../components/UserRatingBadge';
 import GroupPreferencePicker from '../components/GroupPreferencePicker';
 import {
   BuddyConnections,
@@ -40,7 +41,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { matchesSearch } from '../utils/search';
 import { colors } from '../theme';
 
-export default function BuddiesScreen({ navigation }: any) {
+export default function BuddiesScreen({ navigation, route }: any) {
   const [tab, setTab] = useState<'buddies' | 'groups' | 'requests'>('buddies');
   const [connections, setConnections] = useState<BuddyConnections>({
     buddies: [],
@@ -104,8 +105,30 @@ export default function BuddiesScreen({ navigation }: any) {
   }, []);
 
   useFocusEffect(useCallback(() => {
+    if (route?.params?.openGroupId) {
+      setTab('groups');
+    }
     void loadData();
-  }, [loadData]));
+  }, [loadData, route?.params?.openGroupId]));
+
+  useEffect(() => {
+    const openGroupId = route?.params?.openGroupId;
+    if (!openGroupId) return;
+
+    if (loading) return;
+
+    const group = groups.find((item) => item.id === Number(openGroupId));
+    if (group) {
+      navigation.navigate('BuddyGroupDetail', {
+        kind: 'group',
+        id: group.id,
+        name: group.name,
+        averageRating: group.average_rating,
+        ratingsCount: group.ratings_count,
+      });
+    }
+    navigation.setParams({ openGroupId: undefined });
+  }, [groups, loading, navigation, route?.params?.openGroupId]);
 
   const handleRequestResponse = async (requestId: number, action: 'accept' | 'decline') => {
     try {
@@ -123,12 +146,29 @@ export default function BuddiesScreen({ navigation }: any) {
     }
   };
 
-  const openBuddyDetails = (buddy: { id: number; name: string }) => {
-    navigation.navigate('BuddyGroupDetail', { kind: 'buddy', id: buddy.id, name: buddy.name });
+  const openBuddyDetails = (buddy: {
+    id: number;
+    name: string;
+    average_rating: number | null;
+    ratings_count: number;
+  }) => {
+    navigation.navigate('BuddyGroupDetail', {
+      kind: 'buddy',
+      id: buddy.id,
+      name: buddy.name,
+      averageRating: buddy.average_rating,
+      ratingsCount: buddy.ratings_count,
+    });
   };
 
   const openGroupDetails = (group: GroupRecord) => {
-    navigation.navigate('BuddyGroupDetail', { kind: 'group', id: group.id, name: group.name });
+    navigation.navigate('BuddyGroupDetail', {
+      kind: 'group',
+      id: group.id,
+      name: group.name,
+      averageRating: group.average_rating,
+      ratingsCount: group.ratings_count,
+    });
   };
 
   const handleGroupRequestResponse = async (
@@ -294,15 +334,10 @@ export default function BuddiesScreen({ navigation }: any) {
                             <Text style={styles.avatarText}>{buddy.name.slice(0, 2).toUpperCase()}</Text>
                           </View>
                         )}
-                        {buddy.average_rating !== null ? (
-                          <View
-                            style={styles.ratingBadge}
-                            accessibilityLabel={`Rated ${buddy.average_rating.toFixed(1)} out of 5 from ${buddy.ratings_count} ratings`}
-                          >
-                            <Text style={styles.ratingValue}>{Math.round(buddy.average_rating)}</Text>
-                            <Ionicons name="star" size={10} color="#d97706" />
-                          </View>
-                        ) : null}
+                        <UserRatingBadge
+                          averageRating={buddy.average_rating}
+                          ratingsCount={buddy.ratings_count}
+                        />
                       </View>
                       <View style={styles.cardBody}>
                         <Text style={styles.cardTitle}>{buddy.name}</Text>
@@ -338,7 +373,18 @@ export default function BuddiesScreen({ navigation }: any) {
               onPress={() => openGroupDetails(group)}
               key={group.id}
             >
-              <GroupAvatar icon={group.avatar_icon} color={group.avatar_color} size={42} />
+              <View style={styles.groupAvatarWrapper}>
+                <GroupAvatar icon={group.avatar_icon} color={group.avatar_color} size={42} />
+                {group.average_rating != null ? (
+                  <View
+                    style={styles.ratingBadge}
+                    accessibilityLabel={`Rated ${group.average_rating.toFixed(1)} out of 5 from ${group.ratings_count ?? 0} ratings`}
+                  >
+                    <Text style={styles.ratingValue}>{group.average_rating.toFixed(1)}</Text>
+                    <Ionicons name="star" size={9} color="#d97706" />
+                  </View>
+                ) : null}
+              </View>
               <View style={styles.cardBody}>
                 <Text style={styles.cardTitle}>{group.name}</Text>
                 <Text style={styles.cardSub}>{group.course} · {group.members ?? 0} members</Text>
@@ -361,11 +407,14 @@ export default function BuddiesScreen({ navigation }: any) {
                 {filteredIncomingRequests.map((request) => (
                   <View key={`buddy-incoming-${request.id}`} style={styles.requestCard}>
                     <View style={styles.card}>
-                      {request.user.profile_photo_url ? (
-                        <Image source={{ uri: request.user.profile_photo_url }} style={styles.avatar} />
-                      ) : (
-                        <View style={styles.avatar}><Text style={styles.avatarText}>{request.user.name.slice(0, 2).toUpperCase()}</Text></View>
-                      )}
+                      <View style={styles.requestAvatarWrap}>
+                        {request.user.profile_photo_url ? (
+                          <Image source={{ uri: request.user.profile_photo_url }} style={styles.avatar} />
+                        ) : (
+                          <View style={styles.avatar}><Text style={styles.avatarText}>{request.user.name.slice(0, 2).toUpperCase()}</Text></View>
+                        )}
+                        <UserRatingBadge averageRating={request.user.average_rating} ratingsCount={request.user.ratings_count} />
+                      </View>
                       <View style={styles.cardBody}>
                         <Text style={styles.cardTitle}>{request.user.name}</Text>
                         <Text style={styles.cardSub}>{request.user.program || 'SNSU student'} wants to study with you</Text>
@@ -396,11 +445,14 @@ export default function BuddiesScreen({ navigation }: any) {
                 <Text style={styles.sectionTitle}>Sent buddy requests</Text>
                 {filteredOutgoingRequests.map((request) => (
                   <View key={`buddy-outgoing-${request.id}`} style={styles.card}>
-                    {request.user.profile_photo_url ? (
-                      <Image source={{ uri: request.user.profile_photo_url }} style={styles.avatar} />
-                    ) : (
-                      <View style={styles.avatar}><Text style={styles.avatarText}>{request.user.name.slice(0, 2).toUpperCase()}</Text></View>
-                    )}
+                    <View style={styles.requestAvatarWrap}>
+                      {request.user.profile_photo_url ? (
+                        <Image source={{ uri: request.user.profile_photo_url }} style={styles.avatar} />
+                      ) : (
+                        <View style={styles.avatar}><Text style={styles.avatarText}>{request.user.name.slice(0, 2).toUpperCase()}</Text></View>
+                      )}
+                      <UserRatingBadge averageRating={request.user.average_rating} ratingsCount={request.user.ratings_count} />
+                    </View>
                     <View style={styles.cardBody}>
                       <Text style={styles.cardTitle}>{request.user.name}</Text>
                       <Text style={styles.cardSub}>Waiting for them to accept</Text>
@@ -418,6 +470,7 @@ export default function BuddiesScreen({ navigation }: any) {
                   return (
                     <View key={`group-${actionKey}`} style={styles.requestCard}>
                       <View style={styles.groupRequestUser}>
+                        <View style={styles.groupRequestAvatarWrap}>
                         {request.profile_photo_url ? (
                           <Image source={{ uri: request.profile_photo_url }} style={styles.groupRequestAvatar} />
                         ) : (
@@ -425,6 +478,8 @@ export default function BuddiesScreen({ navigation }: any) {
                             <Text style={styles.avatarText}>{request.user_name.slice(0, 2).toUpperCase()}</Text>
                           </View>
                         )}
+                        <UserRatingBadge averageRating={request.average_rating} ratingsCount={request.ratings_count} />
+                        </View>
                         <View style={styles.cardBody}>
                           <Text style={styles.cardTitle}>{request.user_name}</Text>
                           <Text style={styles.cardSub}>Requested to join {group.name}</Text>
@@ -502,8 +557,20 @@ export default function BuddiesScreen({ navigation }: any) {
                 />
               ))}
             </View>
-            <TextInput value={name} onChangeText={setName} placeholder="Group name" style={styles.input} />
-            <TextInput value={course} onChangeText={setCourse} placeholder="Course" style={styles.input} />
+            <TextInput
+              value={name}
+              onChangeText={setName}
+              placeholder="Group name"
+              placeholderTextColor="#64748b"
+              style={styles.input}
+            />
+            <TextInput
+              value={course}
+              onChangeText={setCourse}
+              placeholder="Course or subject"
+              placeholderTextColor="#64748b"
+              style={styles.input}
+            />
             <GroupPreferencePicker
               label="Study style"
               options={GROUP_STUDY_STYLE_OPTIONS}
@@ -522,7 +589,13 @@ export default function BuddiesScreen({ navigation }: any) {
               value={studyMode}
               onChange={setStudyMode}
             />
-            <TextInput value={schedule} onChangeText={setSchedule} placeholder="Schedule (optional)" style={styles.input} />
+            <TextInput
+              value={schedule}
+              onChangeText={setSchedule}
+              placeholder="Schedule (optional)"
+              placeholderTextColor="#64748b"
+              style={styles.input}
+            />
             <TouchableOpacity style={styles.primaryButton} onPress={() => { void handleCreateGroup(); }}><Text style={styles.primaryButtonText}>Create</Text></TouchableOpacity>
             <TouchableOpacity onPress={() => setShowCreate(false)}><Text style={styles.link}>Cancel</Text></TouchableOpacity>
           </ScrollView>
@@ -565,6 +638,8 @@ const styles = StyleSheet.create({
   buddyRow: { minHeight: 70, paddingHorizontal: 13, paddingVertical: 10, flexDirection: 'row', alignItems: 'center', gap: 11, borderBottomWidth: 1, borderBottomColor: colors.border },
   buddyRowLast: { borderBottomWidth: 0 },
   buddyAvatarWrapper: { width: 42, height: 42, position: 'relative' },
+  requestAvatarWrap: { width: 44, height: 44, position: 'relative' },
+  groupRequestAvatarWrap: { width: 36, height: 36, position: 'relative' },
   buddyAvatar: { width: 42, height: 42, borderRadius: 11, backgroundColor: colors.tealLight, alignItems: 'center', justifyContent: 'center' },
   avatar: { width: 44, height: 44, borderRadius: 11, backgroundColor: colors.tealLight, alignItems: 'center', justifyContent: 'center' },
   avatarText: { color: colors.teal, fontWeight: '800' },
@@ -573,6 +648,7 @@ const styles = StyleSheet.create({
   buddyRowMeta: { alignItems: 'flex-end', gap: 5 },
   ratingBadge: { position: 'absolute', top: -5, right: -6, minWidth: 27, height: 18, paddingHorizontal: 4, borderRadius: 9, backgroundColor: '#fffbeb', borderWidth: 1, borderColor: '#ffffff', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 2, zIndex: 1 },
   ratingValue: { color: '#92400e', fontSize: 11, fontWeight: '800' },
+  groupAvatarWrapper: { position: 'relative', marginRight: 4 },
   cardSub: { color: colors.muted, fontSize: 11, marginTop: 4 },
   score: { color: colors.teal, fontWeight: '800', fontSize: 11 },
   role: { color: '#64748b', fontSize: 12 },
@@ -605,5 +681,5 @@ const styles = StyleSheet.create({
   selectedOption: { borderColor: '#1a5f7a', backgroundColor: '#eaf4f7' },
   colorOption: { width: 30, height: 30, borderRadius: 15, borderWidth: 3, borderColor: '#fff' },
   selectedColor: { borderColor: '#0d3b4f' },
-  input: { backgroundColor: '#f8fafc', borderWidth: 1, borderColor: '#dbe3eb', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 11 },
+  input: { backgroundColor: '#f8fafc', color: colors.text, borderWidth: 1, borderColor: '#dbe3eb', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 11 },
 });

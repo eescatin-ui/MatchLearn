@@ -1,53 +1,70 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
+  Image,
   StyleSheet,
   ScrollView,
   KeyboardAvoidingView,
   Platform,
-  TouchableOpacity,
 } from 'react-native';
 import { Alert } from '../../components/AppAlert';
-import { TextInput, Button, Text } from 'react-native-paper';
+import { Button, TextInput, Text } from 'react-native-paper';
+import {
+  GoogleOneTapSignIn,
+  GoogleSignInButton,
+  isErrorWithCode,
+  statusCodes,
+} from 'react-native-nitro-google-signin';
 import { useAuth } from '../../context/AuthContext';
-import { validateInstitutionalEmail } from '../../utils/validation';
 import { colors } from '../../theme';
 
-export default function LoginScreen({ navigation }: any) {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
-  const [showPassword, setShowPassword] = useState(false);
-  const [errors, setErrors] = useState<Record<string, string>>({});
+export default function LoginScreen() {
+  const googleWebClientId = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID?.trim() ?? '';
+  const googleIOSUrlScheme = process.env.EXPO_PUBLIC_GOOGLE_IOS_URL_SCHEME?.trim() ?? '';
+  const isGoogleSignInConfigured =
+    !!googleWebClientId && (Platform.OS !== 'ios' || !!googleIOSUrlScheme);
+  const [isCreatingAccount, setIsCreatingAccount] = useState(false);
+  const [fullName, setFullName] = useState('');
+  const [isNameConfirmed, setIsNameConfirmed] = useState(false);
+  const [isGoogleLoading, setIsGoogleLoading] = useState(false);
 
-  const { login } = useAuth();
+  const { loginWithGoogle } = useAuth();
 
-  const handleLogin = async () => {
-    setErrors({});
-
-    if (!email.trim()) {
-      setErrors({ email: 'Email is required' });
-      return;
+  useEffect(() => {
+    if (googleWebClientId) {
+      GoogleOneTapSignIn.configure({ webClientId: googleWebClientId });
     }
+  }, [googleWebClientId]);
 
-    if (!validateInstitutionalEmail(email)) {
-      setErrors({ email: 'Only SNSU and SSCT student emails can register for MatchLearn.' });
-      return;
-    }
-
-    if (!password) {
-      setErrors({ password: 'Password is required' });
-      return;
-    }
-
+  const handleGoogleSuccess = async (idToken: string) => {
     try {
-      setIsLoading(true);
-      await login(email, password);
-    } catch (error: any) {
-      Alert.alert('Login Failed', error.message || 'Invalid credentials');
+      setIsGoogleLoading(true);
+      await loginWithGoogle(idToken, isCreatingAccount ? fullName.trim() : undefined);
+    } catch (error) {
+      Alert.alert('Google Sign-In Failed', error instanceof Error ? error.message : 'Please try again.');
     } finally {
-      setIsLoading(false);
+      setIsGoogleLoading(false);
     }
+  };
+
+  const handleGoogleError = (error: unknown) => {
+    if (isErrorWithCode(error) && error.code === statusCodes.SIGN_IN_CANCELLED) return;
+    Alert.alert('Google Sign-In Failed', error instanceof Error ? error.message : 'Please try again.');
+  };
+
+  const handleCreateAccountNext = () => {
+    if (fullName.trim().length < 2) {
+      Alert.alert('Enter your full name', 'Your name must be at least 2 characters long.');
+      return;
+    }
+
+    setIsNameConfirmed(true);
+  };
+
+  const switchAccountMode = () => {
+    setIsCreatingAccount((current) => !current);
+    setFullName('');
+    setIsNameConfirmed(false);
   };
 
   return (
@@ -60,85 +77,106 @@ export default function LoginScreen({ navigation }: any) {
         keyboardShouldPersistTaps="handled"
       >
         <View style={styles.brandCard}>
-          <View style={styles.brandLockup} accessibilityLabel="MatchLearn">
-            <View style={styles.brandMark}>
-              <Text style={styles.brandMarkLetter}>M</Text>
-            </View>
-            <Text style={styles.brandName}>
-              Match<Text style={styles.brandAccent}>Learn</Text>
-            </Text>
-          </View>
+          <Image
+            source={require('../../../assets/brand-logo.png')}
+            style={styles.brandLogo}
+            resizeMode="contain"
+            accessibilityLabel="MatchLearn logo"
+          />
           <Text style={styles.eyebrow}>WELCOME TO MATCHLEARN</Text>
           <Text style={styles.title}>Learn better, together.</Text>
           <Text style={styles.subtitle}>Sign in to find your study match.</Text>
         </View>
 
         <View style={styles.formCard}>
-          <Text style={styles.formTitle}>Welcome back</Text>
-          <Text style={styles.formSubtitle}>Use your student account to continue.</Text>
+          <Text style={styles.formTitle}>
+            {isCreatingAccount ? 'Create your account' : 'Sign in with Google'}
+          </Text>
+          <Text style={styles.formSubtitle}>
+            {isCreatingAccount
+              ? 'Enter your name, then continue with your verified SSCT or SNSU Google account.'
+              : 'Continue with the verified SSCT or SNSU Google account linked to your MatchLearn account.'}
+          </Text>
 
-          <TextInput
-            label="Institutional Email"
-            value={email}
-            onChangeText={setEmail}
-            keyboardType="email-address"
-            autoCapitalize="none"
-            autoComplete="email"
-            mode="outlined"
-            style={styles.input}
-            outlineColor={colors.border}
-            activeOutlineColor={colors.teal}
-            editable={!isLoading}
-            error={!!errors.email}
-          />
-          {errors.email && <Text style={styles.errorText}>{errors.email}</Text>}
+          {isCreatingAccount ? (
+            <>
+              <View style={styles.nameRow}>
+                <TextInput
+                  label="Full name"
+                  value={fullName}
+                  onChangeText={(value) => {
+                    setFullName(value);
+                    setIsNameConfirmed(false);
+                  }}
+                  autoCapitalize="words"
+                  autoComplete="name"
+                  mode="outlined"
+                  style={styles.nameInput}
+                  outlineColor={colors.border}
+                  activeOutlineColor={colors.teal}
+                  editable={!isGoogleLoading}
+                  accessibilityLabel="Full name"
+                  returnKeyType="next"
+                  onSubmitEditing={handleCreateAccountNext}
+                />
+                <Button
+                  mode="contained"
+                  onPress={handleCreateAccountNext}
+                  disabled={isGoogleLoading || fullName.trim().length < 2}
+                  buttonColor={colors.teal}
+                  style={styles.nextButton}
+                  accessibilityLabel="Confirm full name and continue"
+                >
+                  Next
+                </Button>
+              </View>
+              {isNameConfirmed ? (
+                <Text style={styles.confirmedName}>Name confirmed: {fullName.trim()}</Text>
+              ) : null}
+            </>
+          ) : null}
 
-          <TextInput
-            label="Password"
-            value={password}
-            onChangeText={setPassword}
-            secureTextEntry={!showPassword}
-            autoComplete="password"
-            mode="outlined"
-            style={styles.input}
-            outlineColor={colors.border}
-            activeOutlineColor={colors.teal}
-            editable={!isLoading}
-            error={!!errors.password}
-            right={
-              <TextInput.Icon
-                icon={showPassword ? 'eye-off' : 'eye'}
-                onPress={() => setShowPassword(!showPassword)}
-                forceTextInputFocus={false}
+          {Platform.OS !== 'web' ? (
+            <>
+              <GoogleSignInButton
+                size="wide"
+                colorScheme="light"
+                loading={isGoogleLoading}
+                disabled={
+                  isGoogleLoading
+                  || !isGoogleSignInConfigured
+                  || (isCreatingAccount && !isNameConfirmed)
+                }
+                style={styles.googleSignInButton}
+                onSignInSuccess={({ idToken }) => { void handleGoogleSuccess(idToken); }}
+                onSignInError={handleGoogleError}
               />
-            }
-          />
-          {errors.password && <Text style={styles.errorText}>{errors.password}</Text>}
+              <Text style={styles.googleHint}>
+                {isCreatingAccount
+                  ? 'Your confirmed name will be used for your new MatchLearn profile.'
+                  : 'Use the Google account with the same email you used for MatchLearn.'}
+              </Text>
+              {!isGoogleSignInConfigured ? (
+                <Text style={styles.googleConfigHint}>
+                  Google sign-in is not configured for this build.
+                </Text>
+              ) : null}
+            </>
+          ) : (
+            <Text style={styles.googleConfigHint}>
+              Sign in with Google using the MatchLearn Android or iOS app.
+            </Text>
+          )}
 
           <Button
-            mode="contained"
-            onPress={handleLogin}
-            loading={isLoading}
-            disabled={isLoading}
-            buttonColor={colors.teal}
-            textColor="#ffffff"
-            style={styles.button}
-            contentStyle={styles.buttonContent}
-            labelStyle={styles.buttonLabel}
+            mode="text"
+            onPress={switchAccountMode}
+            disabled={isGoogleLoading}
+            textColor={colors.teal}
+            style={styles.modeButton}
           >
-            Login
+            {isCreatingAccount ? 'Already have an account? Sign in' : 'Create account'}
           </Button>
-
-          <View style={styles.footer}>
-            <Text style={styles.footerText}>New to MatchLearn?</Text>
-            <TouchableOpacity
-              onPress={() => navigation.navigate('Register')}
-              disabled={isLoading}
-              accessibilityRole="button"
-            >
-              <Text style={styles.signUpText}>Create an account</Text>
-            </TouchableOpacity>
-          </View>
         </View>
       </ScrollView>
     </KeyboardAvoidingView>
@@ -162,37 +200,14 @@ const styles = StyleSheet.create({
     borderRadius: 11,
     paddingHorizontal: 22,
     paddingVertical: 24,
-    alignItems: 'flex-start',
+    alignItems: 'center',
     borderWidth: 1,
     borderColor: colors.border,
   },
-  brandLockup: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 18,
-    gap: 10,
-  },
-  brandMark: {
-    width: 36,
-    height: 36,
-    borderRadius: 12,
-    backgroundColor: colors.teal,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  brandMarkLetter: {
-    color: '#ffffff',
-    fontSize: 18,
-    fontWeight: '800',
-  },
-  brandName: {
-    color: colors.navy,
-    fontSize: 20,
-    fontWeight: '800',
-    letterSpacing: -0.8,
-  },
-  brandAccent: {
-    color: colors.teal,
+  brandLogo: {
+    width: '100%',
+    height: 132,
+    marginBottom: 10,
   },
   eyebrow: {
     color: colors.teal,
@@ -200,17 +215,20 @@ const styles = StyleSheet.create({
     letterSpacing: 1.2,
     fontWeight: '800',
     marginBottom: 7,
+    textAlign: 'center',
   },
   title: {
     color: colors.navy,
     fontSize: 25,
     lineHeight: 32,
     fontWeight: '800',
+    textAlign: 'center',
   },
   subtitle: {
     color: colors.muted,
     fontSize: 13,
     marginTop: 5,
+    textAlign: 'center',
   },
   formCard: {
     backgroundColor: '#ffffff',
@@ -230,41 +248,20 @@ const styles = StyleSheet.create({
     marginTop: 4,
     marginBottom: 18,
   },
-  input: {
-    backgroundColor: '#ffffff',
-    marginBottom: 10,
-  },
-  errorText: {
-    color: '#dc2626',
-    fontSize: 12,
-    marginBottom: 10,
-    marginTop: -6,
-  },
-  button: {
-    marginTop: 8,
-    borderRadius: 8,
-  },
-  buttonContent: {
-    minHeight: 48,
-  },
-  buttonLabel: {
-    fontSize: 15,
-    fontWeight: '800',
-  },
-  footer: {
+  nameRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    marginTop: 20,
+    gap: 8,
+    marginBottom: 10,
   },
-  footerText: {
-    color: '#64748b',
-    fontSize: 13,
+  nameInput: {
+    flex: 1,
+    backgroundColor: '#ffffff',
   },
-  signUpText: {
-    color: colors.teal,
-    fontSize: 13,
-    fontWeight: '800',
-  },
+  nextButton: { justifyContent: 'center' },
+  googleSignInButton: { width: '100%', height: 48 },
+  googleHint: { color: colors.muted, fontSize: 11, textAlign: 'center', marginTop: 8 },
+  googleConfigHint: { color: '#b45309', fontSize: 11, textAlign: 'center', marginTop: 4 },
+  confirmedName: { color: colors.teal, fontSize: 12, marginBottom: 8 },
+  modeButton: { marginTop: 8 },
 });

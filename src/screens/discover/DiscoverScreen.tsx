@@ -13,11 +13,13 @@ import {
 import { Alert } from '../../components/AppAlert';
 import { discoverGroups, GroupRecord, joinGroup } from '../../services/api/groups';
 import { fetchMatches, refreshMatches } from '../../services/api/matches';
+import { fetchBuddyConnections } from '../../services/api/buddies';
 import { MatchRecord } from '../../types/match';
 import { useFocusEffect } from '@react-navigation/native';
 import AppHeader from '../../components/AppHeader';
 import { Ionicons } from '@expo/vector-icons';
 import GroupAvatar from '../../components/GroupAvatar';
+import UserRatingBadge from '../../components/UserRatingBadge';
 import { getMatchScoreColors } from '../../utils/matchScoreColors';
 import { matchesSearch } from '../../utils/search';
 import { colors } from '../../theme';
@@ -30,6 +32,7 @@ export default function DiscoverScreen({ navigation, route }: any) {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [joining, setJoining] = useState<number | null>(null);
+  const [pendingBuddyIds, setPendingBuddyIds] = useState<Set<number>>(new Set());
   const [searchQuery, setSearchQuery] = useState('');
 
   const filteredMatches = matches.filter((match) => matchesSearch(
@@ -67,6 +70,26 @@ export default function DiscoverScreen({ navigation, route }: any) {
   useFocusEffect(useCallback(() => {
     void loadData();
   }, [loadData]));
+
+  useFocusEffect(useCallback(() => {
+    let isActive = true;
+    fetchBuddyConnections().then((connections) => {
+      if (isActive) {
+        setPendingBuddyIds(new Set(connections.outgoing_requests.map((request) => request.user.id)));
+      }
+    }).catch((statusError) => {
+      if (isActive) {
+        Alert.alert(
+          'Could not load buddy requests',
+          statusError instanceof Error ? statusError.message : 'Please try again.'
+        );
+      }
+    });
+
+    return () => {
+      isActive = false;
+    };
+  }, []));
 
   useEffect(() => {
     const openMatchId = route?.params?.openMatchId;
@@ -157,15 +180,10 @@ export default function DiscoverScreen({ navigation, route }: any) {
                   ) : (
                     <View style={styles.avatar}><Text style={styles.avatarText}>{match.matched_user.name.slice(0, 2).toUpperCase()}</Text></View>
                   )}
-                  {match.matched_user.average_rating !== null ? (
-                    <View
-                      style={styles.ratingBadge}
-                      accessibilityLabel={`Rated ${match.matched_user.average_rating.toFixed(1)} out of 5 from ${match.matched_user.ratings_count} ratings`}
-                    >
-                      <Text style={styles.ratingValue}>{Math.round(match.matched_user.average_rating)}</Text>
-                      <Ionicons name="star" size={10} color="#d97706" />
-                    </View>
-                  ) : null}
+                  <UserRatingBadge
+                    averageRating={match.matched_user.average_rating}
+                    ratingsCount={match.matched_user.ratings_count}
+                  />
                 </View>
                 <View style={styles.cardBody}>
                   <Text style={styles.cardTitle}>{match.matched_user.name}</Text>
@@ -174,6 +192,9 @@ export default function DiscoverScreen({ navigation, route }: any) {
                       ? `${match.shared_course_count} shared course code${match.shared_course_count === 1 ? '' : 's'}`
                       : match.reasons[0] || 'Study profile match'}
                   </Text>
+                  {pendingBuddyIds.has(match.matched_user.id) ? (
+                    <Text style={styles.requestSentText}>Request sent</Text>
+                  ) : null}
                 </View>
                 <View style={styles.matchMeta}>
                   <View style={[styles.matchBadge, { backgroundColor: getMatchScoreColors(match.compatibility_score).backgroundColor }]}>
@@ -279,6 +300,7 @@ const styles = StyleSheet.create({
   groupActionColumn: { alignItems: 'flex-end', gap: 5 },
   cardBody: { flex: 1 },
   cardTitle: { color: colors.navy, fontWeight: '700', fontSize: 14, marginBottom: 4 },
+  requestSentText: { color: colors.teal, fontSize: 11, fontWeight: '700', marginTop: 3 },
   ratingBadge: { position: 'absolute', top: -5, right: -6, minWidth: 27, height: 18, paddingHorizontal: 4, borderRadius: 9, backgroundColor: '#fffbeb', borderWidth: 1, borderColor: '#ffffff', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 2, zIndex: 1 },
   ratingValue: { color: '#92400e', fontSize: 11, fontWeight: '800' },
   body: { color: colors.muted, fontSize: 12, lineHeight: 18 },

@@ -10,6 +10,8 @@ export interface ConversationRecord {
   avatar_icon?: GroupAvatarIcon;
   avatar_color?: GroupAvatarColor;
   profile_photo_url?: string | null;
+  average_rating?: number | null;
+  ratings_count?: number;
   lastMessage: string;
   time: string | null;
   unread_count?: number;
@@ -44,7 +46,13 @@ export interface MessageRecord {
   sender: 'me' | 'them';
   content: string;
   created_at: string;
-  user: { id: number; name: string; profile_photo_url?: string | null } | null;
+  user: {
+    id: number;
+    name: string;
+    profile_photo_url?: string | null;
+    average_rating?: number | null;
+    ratings_count?: number;
+  } | null;
 }
 
 export const fetchConversationMessages = async (chat: ConversationRecord): Promise<MessageRecord[]> => {

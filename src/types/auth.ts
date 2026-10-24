@@ -3,9 +3,11 @@ export interface User {
   name: string;
   email: string;
   is_suspended: boolean;
+  average_rating?: number | null;
+  ratings_count?: number;
   profile?: Profile;
   profile_photo_url?: string | null;
-  created_at: string;
+  created_at: string | null;
 }
 
 export interface Profile {

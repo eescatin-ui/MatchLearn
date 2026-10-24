@@ -6,6 +6,8 @@ export interface ReviewRecord {
   comment: string | null;
   reviewer_name: string;
   reviewer_profile_photo_url: string | null;
+  reviewer_average_rating: number | null;
+  reviewer_ratings_count: number;
   created_at: string;
 }
 
@@ -13,6 +15,8 @@ export interface ReviewableBuddy {
   id: number;
   name: string;
   profile_photo_url: string | null;
+  average_rating: number | null;
+  ratings_count: number;
   my_rating: number | null;
   my_comment: string | null;
 }

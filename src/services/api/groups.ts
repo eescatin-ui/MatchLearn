@@ -73,6 +73,8 @@ export interface GroupMember {
   id: number;
   name: string;
   profile_photo_url?: string | null;
+  average_rating?: number | null;
+  ratings_count?: number;
   role: string;
 }
 
@@ -89,6 +91,8 @@ export interface GroupJoinRequest {
   user_id: number;
   user_name: string;
   profile_photo_url?: string | null;
+  average_rating?: number | null;
+  ratings_count?: number;
 }
 
 interface GroupListResponse extends ApiResponse {

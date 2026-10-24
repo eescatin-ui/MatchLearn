@@ -14,6 +14,7 @@ import {
 import { Alert } from '../components/AppAlert';
 import { Ionicons } from '@expo/vector-icons';
 import AppHeader from '../components/AppHeader';
+import UserRatingBadge from '../components/UserRatingBadge';
 import { colors } from '../theme';
 import GroupAvatar from '../components/GroupAvatar';
 import GroupPreferencePicker from '../components/GroupPreferencePicker';
@@ -51,8 +52,20 @@ import { startDirectConversation } from '../services/api/messages';
 import { fetchReviews } from '../services/api/reviews';
 
 type DetailRoute =
-  | { kind: 'buddy'; id: number; name: string }
-  | { kind: 'group'; id: number; name: string };
+  | {
+      kind: 'buddy';
+      id: number;
+      name: string;
+      averageRating?: number | null;
+      ratingsCount?: number;
+    }
+  | {
+      kind: 'group';
+      id: number;
+      name: string;
+      averageRating?: number | null;
+      ratingsCount?: number;
+    };
 
 export default function BuddiesDetailScreen({ navigation, route }: any) {
   const detailRoute = route.params as DetailRoute;
@@ -92,14 +105,27 @@ export default function BuddiesDetailScreen({ navigation, route }: any) {
           fetchBuddyReport(detailRoute.id),
           fetchReviews(detailRoute.id),
         ]);
-        setBuddy(nextBuddy);
+        setBuddy({
+          ...nextBuddy,
+          average_rating: buddyReviews.averageRating
+            ?? detailRoute.averageRating
+            ?? nextBuddy.average_rating,
+          ratings_count: buddyReviews.ratingsCount
+            || detailRoute.ratingsCount
+            || nextBuddy.ratings_count,
+        });
         setBuddyReport(nextReport);
         setHasRatedBuddy(buddyReviews.myReview !== null);
       } else {
         const nextGroup = await fetchGroupDetails(detailRoute.id);
-        setGroup(nextGroup);
+        const groupWithRatingFallback = {
+          ...nextGroup,
+          average_rating: nextGroup.average_rating ?? detailRoute.averageRating ?? null,
+          ratings_count: nextGroup.ratings_count || detailRoute.ratingsCount || 0,
+        };
+        setGroup(groupWithRatingFallback);
         if (openRating) {
-          setRating(nextGroup.my_rating ?? 5);
+          setRating(groupWithRatingFallback.my_rating ?? 5);
           setComment('');
           setRatingVisible(true);
         }
@@ -114,7 +140,12 @@ export default function BuddiesDetailScreen({ navigation, route }: any) {
     } finally {
       setLoading(false);
     }
-  }, [detailRoute.id, isBuddy]);
+  }, [
+    detailRoute.averageRating,
+    detailRoute.id,
+    detailRoute.ratingsCount,
+    isBuddy,
+  ]);
 
   useFocusEffect(
     useCallback(() => {
@@ -364,17 +395,20 @@ export default function BuddiesDetailScreen({ navigation, route }: any) {
           <>
             <View style={styles.buddyHero}>
               <View style={styles.heroTopRow}>
-                {profile?.profile_photo_url ? (
-                  <Image
-                    source={{ uri: profile.profile_photo_url }}
-                    style={styles.profileImage}
-                    accessibilityLabel={`${buddy?.name ?? detailRoute.name}'s profile photo`}
-                  />
-                ) : (
-                  <View style={styles.avatar}>
-                    <Text style={styles.avatarText}>{(buddy?.name ?? detailRoute.name).slice(0, 2).toUpperCase()}</Text>
-                  </View>
-                )}
+                <View style={styles.buddyPhotoWrap}>
+                  {profile?.profile_photo_url ? (
+                    <Image
+                      source={{ uri: profile.profile_photo_url }}
+                      style={styles.profileImage}
+                      accessibilityLabel={`${buddy?.name ?? detailRoute.name}'s profile photo`}
+                    />
+                  ) : (
+                    <View style={styles.avatar}>
+                      <Text style={styles.avatarText}>{(buddy?.name ?? detailRoute.name).slice(0, 2).toUpperCase()}</Text>
+                    </View>
+                  )}
+                  <UserRatingBadge averageRating={buddy?.average_rating} ratingsCount={buddy?.ratings_count} />
+                </View>
                 <View style={styles.heroIdentity}>
                   <Text style={styles.heroName}>{buddy?.name ?? detailRoute.name}</Text>
                   <Text style={styles.heroProgram}>{profile?.program ?? 'SNSU student'}</Text>
@@ -577,13 +611,16 @@ export default function BuddiesDetailScreen({ navigation, route }: any) {
               <Text style={styles.sectionTitle}>Members</Text>
               {members.map((member: GroupMember) => (
                 <View key={member.id} style={styles.memberRow}>
-                  {member.profile_photo_url ? (
-                    <Image source={{ uri: member.profile_photo_url }} style={styles.memberAvatar} />
-                  ) : (
-                    <View style={[styles.memberAvatar, styles.memberAvatarFallback]}>
-                      <Text style={styles.memberAvatarText}>{member.name.slice(0, 2).toUpperCase()}</Text>
-                    </View>
-                  )}
+                  <View style={styles.memberAvatarWrap}>
+                    {member.profile_photo_url ? (
+                      <Image source={{ uri: member.profile_photo_url }} style={styles.memberAvatar} />
+                    ) : (
+                      <View style={[styles.memberAvatar, styles.memberAvatarFallback]}>
+                        <Text style={styles.memberAvatarText}>{member.name.slice(0, 2).toUpperCase()}</Text>
+                      </View>
+                    )}
+                    <UserRatingBadge averageRating={member.average_rating} ratingsCount={member.ratings_count} />
+                  </View>
                   <Text style={styles.memberName}>{member.name}{member.role === 'Admin' ? ' · Admin' : ''}</Text>
                 </View>
               ))}
@@ -595,7 +632,13 @@ export default function BuddiesDetailScreen({ navigation, route }: any) {
                   <Text style={styles.reviewTitle}>{review.reviewer_name} · {'★'.repeat(review.rating)}</Text>
                   {review.comment ? <Text style={styles.body}>{review.comment}</Text> : null}
                 </View>
-              )) : <Text style={styles.body}>No ratings yet. Share your feedback about the group.</Text>}
+              )) : (
+                <Text style={styles.body}>
+                  {group.ratings_count
+                    ? `${group.ratings_count} rating${group.ratings_count === 1 ? '' : 's'} received. Written comments are not available here yet.`
+                    : 'No ratings yet. Share your feedback about the group.'}
+                </Text>
+              )}
             </View>
           </>
         ) : null}
@@ -929,6 +972,7 @@ const styles = StyleSheet.create({
   buddyHero: { backgroundColor: colors.surface, borderColor: colors.border, borderWidth: 1, borderRadius: 11, padding: 18, marginBottom: 12, gap: 16 },
   heroTopRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 15 },
   profileImage: { width: 72, height: 72, borderRadius: 16 },
+  buddyPhotoWrap: { width: 72, height: 72, position: 'relative' },
   avatar: { width: 72, height: 72, borderRadius: 16, backgroundColor: colors.tealLight, alignItems: 'center', justifyContent: 'center' },
   avatarText: { color: colors.teal, fontSize: 23, fontWeight: '800' },
   ratingSummary: { alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: '#fffbeb', borderRadius: 10, paddingHorizontal: 10, paddingVertical: 7 },
@@ -976,6 +1020,7 @@ const styles = StyleSheet.create({
   body: { color: '#64748b', fontSize: 13, lineHeight: 20 },
   memberRow: { flexDirection: 'row', alignItems: 'center', gap: 10, borderTopWidth: 1, borderTopColor: '#e2e8f0', paddingTop: 9 },
   memberAvatar: { width: 34, height: 34, borderRadius: 12 },
+  memberAvatarWrap: { width: 34, height: 34, position: 'relative' },
   memberAvatarFallback: { backgroundColor: '#1a5f7a', alignItems: 'center', justifyContent: 'center' },
   memberAvatarText: { color: '#fff', fontSize: 11, fontWeight: '800' },
   memberName: { color: '#334155', flex: 1 },

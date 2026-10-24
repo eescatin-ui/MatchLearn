@@ -13,6 +13,7 @@ import { ConversationRecord, fetchConversations } from '../services/api/messages
 import AppHeader from '../components/AppHeader';
 import { Ionicons } from '@expo/vector-icons';
 import GroupAvatar from '../components/GroupAvatar';
+import UserRatingBadge from '../components/UserRatingBadge';
 import { colors } from '../theme';
 
 export default function MessagesScreen({ navigation }: any) {
@@ -107,12 +108,20 @@ export default function MessagesScreen({ navigation }: any) {
                   onPress={() => openConversation(chat)}
                 >
                   {chat.type === 'direct' && chat.profile_photo_url ? (
-                    <Image source={{ uri: chat.profile_photo_url }} style={styles.avatarCircle} />
+                    <View style={styles.avatarWrap}>
+                      <Image source={{ uri: chat.profile_photo_url }} style={styles.avatarCircle} />
+                      <UserRatingBadge averageRating={chat.average_rating} ratingsCount={chat.ratings_count} />
+                    </View>
                   ) : chat.type === 'group' ? (
                     <GroupAvatar icon={chat.avatar_icon} color={chat.avatar_color} size={48} style={styles.avatarCircle} />
                   ) : (
-                    <View style={styles.avatarCircle}>
-                      <Text style={styles.avatarTextSmall}>{chat.initials}</Text>
+                    <View style={styles.avatarWrap}>
+                      <View style={styles.avatarCircle}>
+                        <Text style={styles.avatarTextSmall}>{chat.initials}</Text>
+                      </View>
+                      {chat.type === 'direct' ? (
+                        <UserRatingBadge averageRating={chat.average_rating} ratingsCount={chat.ratings_count} />
+                      ) : null}
                     </View>
                   )}
 
@@ -268,6 +277,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     position: 'relative',
   },
+  avatarWrap: { width: 44, height: 44, position: 'relative' },
   avatarTextSmall: {
     color: colors.teal,
     fontWeight: '800',

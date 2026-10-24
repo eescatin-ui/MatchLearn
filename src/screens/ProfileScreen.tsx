@@ -13,6 +13,7 @@ import {
 } from 'react-native';
 import { Alert } from '../components/AppAlert';
 import * as ImagePicker from 'expo-image-picker';
+import appConfig from '../../app.json';
 import { useAuth } from '../context/AuthContext';
 import { profileApi, StudyCourseInput, StudyMode } from '../services/api/profile';
 import { AcademicCatalog, fetchAcademicCatalog } from '../services/api/courses';
@@ -22,7 +23,13 @@ import { colors } from '../theme';
 
 type ProfileTagField = 'academicStrengths' | 'academicNeeds';
 type ProfileSection = 'personal' | 'academic' | 'preferences';
+type SettingsInfoSection = 'privacy' | 'about' | null;
 type StudyCourse = StudyCourseInput & { normalized_course_code: string };
+interface ProfileCompletionGuard {
+  isOnboarding: boolean;
+  warn: () => void;
+}
+const APP_VERSION = appConfig.expo.version;
 const defaultProfile = {
   studentId: '',
   gender: '',
@@ -59,6 +66,63 @@ const studyStyleOptions = [
   'Project-based learning',
   'Problem-solving exercises',
 ];
+const academicMatchTagOptions = [
+  'Programming and coding',
+  'Debugging and troubleshooting',
+  'Web development',
+  'Mobile app development',
+  'Database design and SQL',
+  'Networking',
+  'Cybersecurity',
+  'Data analysis and statistics',
+  'Mathematics and calculations',
+  'Science and laboratory work',
+  'Research and source evaluation',
+  'Academic writing and essays',
+  'Technical writing and documentation',
+  'Reading comprehension',
+  'Presentations and public speaking',
+  'Visual design and UI/UX',
+  'Project planning and organization',
+  'Time management and study planning',
+  'Critical thinking and problem-solving',
+  'Communication and teamwork',
+];
+const getUniqueTagOptions = (options: string[]) => {
+  const cleanedOptions = options.map((option) => option.trim()).filter(Boolean);
+  return [...new Map(cleanedOptions.map((option) => [option.toLowerCase(), option])).values()];
+};
+
+function SettingsAction({
+  icon,
+  title,
+  description,
+  onPress,
+}: {
+  icon: keyof typeof Ionicons.glyphMap;
+  title: string;
+  description: string;
+  onPress: () => void;
+}) {
+  return (
+    <TouchableOpacity
+      style={styles.settingsAction}
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={`${title}. ${description}`}
+    >
+      <View style={styles.settingsActionIcon}>
+        <Ionicons name={icon} size={19} color={colors.teal} />
+      </View>
+      <View style={styles.settingsActionCopy}>
+        <Text style={styles.settingsActionTitle}>{title}</Text>
+        <Text style={styles.settingsActionDescription}>{description}</Text>
+      </View>
+      <Ionicons name="chevron-forward" size={18} color="#94a3b8" />
+    </TouchableOpacity>
+  );
+}
+
 const studyStyleDescriptions: Record<string, string> = {
   'Visual learning': 'Learn through images, charts, and visual examples.',
   'Diagrams and mind maps': 'Connect ideas using diagrams, concept maps, or sketches.',
@@ -144,14 +208,16 @@ function createProfileFormSnapshot(
 export default function ProfileScreen({
   navigation,
   registerLeaveGuard,
+  registerCompletionGuard,
 }: {
   navigation: any;
   registerLeaveGuard: (guard: {
     hasUnsavedChanges: boolean;
     confirmLeave: (onLeave: () => void) => void;
   } | null) => void;
+  registerCompletionGuard: (guard: ProfileCompletionGuard | null) => void;
 }) {
-  const { user, logout, updateUserProfile } = useAuth();
+  const { user, logout, deleteAccount, updateUserProfile } = useAuth();
   const currentUserId = user?.id;
   const [profile, setProfile] = useState(defaultProfile);
   const [displayName, setDisplayName] = useState(user?.name ?? '');
@@ -160,11 +226,16 @@ export default function ProfileScreen({
     user?.profile?.profile_photo_url ?? user?.profile_photo_url ?? null
   );
   const [profileSaved, setProfileSaved] = useState(false);
+  const [onboardingActive, setOnboardingActive] = useState(false);
+  const [showRequiredErrors, setShowRequiredErrors] = useState(false);
   const [profileCheckUserId, setProfileCheckUserId] = useState<number | null>(null);
   const profileLoadInFlightKey = useRef<string | null>(null);
   const [activeSection, setActiveSection] = useState<ProfileSection>('personal');
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [settingsVisible, setSettingsVisible] = useState(false);
+  const [settingsInfoSection, setSettingsInfoSection] = useState<SettingsInfoSection>(null);
+  const [isDeletingAccount, setIsDeletingAccount] = useState(false);
+  const profileScrollRef = useRef<ScrollView | null>(null);
   const [pickerField, setPickerField] = useState<keyof typeof defaultProfile | null>(null);
   const [catalog, setCatalog] = useState<AcademicCatalog>({
     departments: [],
@@ -180,6 +251,8 @@ export default function ProfileScreen({
     academicStrengths: '',
     academicNeeds: '',
   });
+  const [tagPickerField, setTagPickerField] = useState<ProfileTagField | null>(null);
+  const [tagPickerSearch, setTagPickerSearch] = useState('');
   const [studyCourses, setStudyCourses] = useState<StudyCourse[]>([]);
   const [courseDraft, setCourseDraft] = useState('');
   const [availabilityDays, setAvailabilityDays] = useState<string[]>([]);
@@ -189,6 +262,11 @@ export default function ProfileScreen({
     !excludedDepartments.has(department.name)
       && (institution === 'SSCT' || snsUCampusDepartments.has(department.name))
   );
+  const academicMatchSuggestions = getUniqueTagOptions([
+    ...academicMatchTagOptions,
+    ...catalog.strengths.map((item) => item.name),
+    ...catalog.weaknesses.map((item) => item.name),
+  ]);
   const selectedDepartmentId = campusDepartments.find(
     (department) => department.name === profile.department
   )?.id;
@@ -207,15 +285,18 @@ export default function ProfileScreen({
     && savedFormSnapshot !== null
     && savedFormSnapshot !== getFormSnapshot();
   const incompleteSections: Record<ProfileSection, boolean> = {
-    personal: !displayName.trim(),
+    personal: displayName.trim().length < 2,
     academic: !profile.department || !profile.program || !profile.yearLevel,
-    preferences: !studyCourses.length
-      || !profile.preferredTime
+    preferences: !profile.preferredTime
       || !profile.studyMode
       || !profile.studyStyle
       || !availabilityDays.length
-      || !(tags.academicStrengths.length || tags.academicNeeds.length),
+      || !tags.academicStrengths.length
+      || !tags.academicNeeds.length,
   };
+  const shouldHighlightMissing = (section: ProfileSection, missing: boolean) =>
+    onboardingActive && showRequiredErrors && activeSection === section && missing;
+  const isSectionComplete = (section: ProfileSection) => !incompleteSections[section];
 
   useEffect(() => {
     const loadProfile = async (userId: number, requestKey: string) => {
@@ -244,6 +325,8 @@ export default function ProfileScreen({
           setStudyCourses([]);
           setCourseDraft('');
           setAvailabilityDays(loadedAvailabilityDays);
+          setOnboardingActive(true);
+          setShowRequiredErrors(false);
           setSavedFormSnapshot(createProfileFormSnapshot(
             savedDisplayName.current,
             defaultProfile,
@@ -298,12 +381,26 @@ export default function ProfileScreen({
             || course.course_code.replace(/[^a-z0-9]/gi, '').toUpperCase(),
         }));
         const loadedAvailabilityDays = [...new Set(response?.data?.availabilities?.map((item) => item.day_of_week) ?? [])];
+        const hasCompleteMatchingProfile = Boolean(
+          savedDisplayName.current.trim().length >= 2
+          && loadedProfile.department
+          && loadedProfile.program
+          && loadedProfile.yearLevel
+          && loadedProfile.studyStyle
+          && loadedProfile.studyMode
+          && loadedProfile.preferredTime
+          && loadedAvailabilityDays.length
+          && loadedTags.academicStrengths.length
+          && loadedTags.academicNeeds.length
+        );
         setProfile(loadedProfile);
         setTags(loadedTags);
         setStudyCourses(loadedCourses);
         setCourseDraft('');
         setTagDrafts({ academicStrengths: '', academicNeeds: '' });
         setAvailabilityDays(loadedAvailabilityDays);
+        setOnboardingActive(!hasCompleteMatchingProfile);
+        setShowRequiredErrors(false);
         setSavedFormSnapshot(createProfileFormSnapshot(
           savedDisplayName.current,
           loadedProfile,
@@ -407,19 +504,29 @@ export default function ProfileScreen({
     return option;
   };
 
-  const renderPickerField = (field: keyof typeof defaultProfile, label: string, value: string) => (
-    <View style={styles.fieldGroup} key={field}>
-      <Text style={styles.label}>{label}</Text>
-      <TouchableOpacity
-        style={styles.selectBox}
-        onPress={() => openPicker(field)}
-        disabled={getFieldOptions(field).length === 0}
-      >
-        <Text style={styles.selectText}>{value ? getOptionLabel(field, value) : `Select ${label.toLowerCase()}`}</Text>
-        <Text style={styles.selectArrow}>▾</Text>
-      </TouchableOpacity>
-    </View>
-  );
+  const renderPickerField = (field: keyof typeof defaultProfile, label: string, value: string) => {
+    const section: ProfileSection = ['department', 'program', 'yearLevel'].includes(field)
+      ? 'academic'
+      : 'preferences';
+    const isRequired = ['department', 'program', 'yearLevel', 'preferredTime', 'studyMode', 'studyStyle'].includes(field);
+    const missing = isRequired && !value;
+    const highlightMissing = shouldHighlightMissing(section, missing);
+
+    return (
+      <View style={styles.fieldGroup} key={field}>
+        <Text style={styles.label}>{label}{isRequired ? ' *' : ''}</Text>
+        <TouchableOpacity
+          style={[styles.selectBox, highlightMissing && styles.requiredFieldError]}
+          onPress={() => openPicker(field)}
+          disabled={getFieldOptions(field).length === 0}
+        >
+          <Text style={styles.selectText}>{value ? getOptionLabel(field, value) : `Select ${label.toLowerCase()}`}</Text>
+          <Text style={styles.selectArrow}>▾</Text>
+        </TouchableOpacity>
+        {highlightMissing ? <Text style={styles.requiredFieldHint}>Required for study matching</Text> : null}
+      </View>
+    );
+  };
 
   const addTag = (field: ProfileTagField, value = tagDrafts[field]) => {
     const tag = value.trim();
@@ -439,14 +546,33 @@ export default function ProfileScreen({
     setTagDrafts((current) => ({ ...current, [field]: '' }));
   };
 
+  const toggleSuggestedTag = (field: ProfileTagField, suggestion: string) => {
+    const alreadySelected = tags[field].some(
+      (tag) => tag.toLowerCase() === suggestion.toLowerCase()
+    );
+    if (alreadySelected) {
+      setTags((current) => ({
+        ...current,
+        [field]: current[field].filter((tag) => tag.toLowerCase() !== suggestion.toLowerCase()),
+      }));
+      return;
+    }
+    addTag(field, suggestion);
+  };
+
   const renderTagEditor = (
     field: ProfileTagField,
     label: string,
-    placeholder: string,
-    suggestions: string[] = []
+    description: string,
+    placeholder: string
   ) => (
-    <View style={styles.fieldGroup}>
+    <View style={[
+      styles.fieldGroup,
+      shouldHighlightMissing('preferences', !tags[field].length)
+        && styles.requiredFieldContainer,
+    ]}>
       <Text style={styles.label}>{label}</Text>
+      <Text style={styles.fieldDescription}>{description}</Text>
       <View style={styles.tagList}>
         {tags[field].map((tag) => (
           <TouchableOpacity
@@ -473,25 +599,27 @@ export default function ProfileScreen({
           returnKeyType="done"
           onSubmitEditing={() => addTag(field)}
         />
+        <TouchableOpacity
+          style={styles.tagPickerButton}
+          onPress={() => {
+            setTagPickerSearch('');
+            setTagPickerField(field);
+          }}
+          accessibilityRole="button"
+          accessibilityLabel={`Choose ${label.toLowerCase()} from suggestions`}
+          accessibilityHint="Opens a list of suggested study topics"
+        >
+          <Ionicons name="chevron-down" size={20} color={colors.teal} />
+        </TouchableOpacity>
         <TouchableOpacity style={styles.addTagButton} onPress={() => addTag(field)}>
           <Text style={styles.addTagButtonText}>Add</Text>
         </TouchableOpacity>
       </View>
-      {suggestions.length ? (
-        <View style={styles.suggestionList}>
-          {suggestions.filter((suggestion) => !tags[field].some(
-            (tag) => tag.toLowerCase() === suggestion.toLowerCase()
-          )).map((suggestion) => (
-            <TouchableOpacity
-              key={suggestion}
-              style={styles.suggestionTag}
-              onPress={() => addTag(field, suggestion)}
-            >
-              <Text style={styles.suggestionTagText}>+ {suggestion}</Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-      ) : null}
+      {shouldHighlightMissing('preferences', !tags[field].length)
+        ? <Text style={styles.requiredFieldHint}>
+          Add at least one {field === 'academicStrengths' ? 'strength' : 'weakness'} for study matching
+        </Text>
+        : null}
     </View>
   );
 
@@ -606,6 +734,104 @@ export default function ProfileScreen({
     updateUserProfile,
   ]);
 
+  const goToFirstIncompleteSection = useCallback(() => {
+    const section = displayName.trim().length < 2
+      ? 'personal'
+      : !profile.department || !profile.program || !profile.yearLevel
+        ? 'academic'
+        : 'preferences';
+    setActiveSection(section);
+    setShowRequiredErrors(true);
+    profileScrollRef.current?.scrollTo({ y: 0, animated: true });
+  }, [displayName, profile]);
+
+  const warnAboutIncompleteProfile = useCallback(() => {
+    Alert.alert(
+      'Complete your study profile',
+      'Finish the required personal, academic, and study match information so MatchLearn can find suitable study partners for you.',
+      [
+        { text: 'Stay here', style: 'cancel' },
+        {
+          text: 'Continue setup',
+          onPress: goToFirstIncompleteSection,
+        },
+      ]
+    );
+  }, [goToFirstIncompleteSection]);
+
+  const handleSectionSave = async () => {
+    if (incompleteSections[activeSection]) {
+      setShowRequiredErrors(true);
+      Alert.alert(
+        'Complete this section',
+        activeSection === 'personal'
+          ? 'Enter your full name before continuing.'
+          : activeSection === 'academic'
+            ? 'Choose your department, program, and year level before continuing.'
+            : 'Choose a study time, study mode, study style, and an available day. Add at least one strength and one weakness before finishing setup. Courses are optional.'
+      );
+      return;
+    }
+
+    const saved = await handleSave(false);
+    if (!saved) return;
+
+    if (!onboardingActive) {
+      Alert.alert('Profile saved', 'Your personal information and study match preferences have been updated.');
+      return;
+    }
+
+    if (activeSection === 'personal') {
+      setActiveSection('academic');
+      setShowRequiredErrors(true);
+      profileScrollRef.current?.scrollTo({ y: 0, animated: true });
+      return;
+    }
+
+    if (activeSection === 'academic') {
+      setActiveSection('preferences');
+      setShowRequiredErrors(true);
+      profileScrollRef.current?.scrollTo({ y: 0, animated: true });
+      return;
+    }
+
+    setOnboardingActive(false);
+    Alert.alert(
+      'Study profile complete',
+      'You’ve added the information MatchLearn needs to find study matches. You can now explore the rest of the app.'
+    );
+  };
+
+  const handleSectionPress = (section: ProfileSection) => {
+    const sectionOrder: ProfileSection[] = ['personal', 'academic', 'preferences'];
+    const targetIndex = sectionOrder.indexOf(section);
+    const firstIncompletePrevious = sectionOrder
+      .slice(0, targetIndex)
+      .find((previousSection) => !isSectionComplete(previousSection));
+
+    if (onboardingActive && firstIncompletePrevious) {
+      setActiveSection(firstIncompletePrevious);
+      setShowRequiredErrors(true);
+      Alert.alert(
+        'Follow the profile steps',
+        'Complete and save the earlier section before moving to this step.'
+      );
+      return;
+    }
+
+    setActiveSection(section);
+    if (onboardingActive) setShowRequiredErrors(true);
+    profileScrollRef.current?.scrollTo({ y: 0, animated: true });
+  };
+
+  useEffect(() => {
+    registerCompletionGuard({
+      isOnboarding: profileCheckReady && onboardingActive,
+      warn: warnAboutIncompleteProfile,
+    });
+    return () => registerCompletionGuard(null);
+  }, [profileCheckReady, onboardingActive, registerCompletionGuard, warnAboutIncompleteProfile]);
+
   const confirmLeave = useCallback((onLeave: () => void) => {
     Alert.alert(
       'Unsaved profile changes',
@@ -645,14 +871,53 @@ export default function ProfileScreen({
     ]);
   };
 
+  const confirmDeleteAccount = () => {
+    Alert.alert(
+      'Delete your account?',
+      'This permanently deletes your account, profile, photos, groups you created, and associated study activity. This cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete account',
+          style: 'destructive',
+          onPress: () => {
+            setIsDeletingAccount(true);
+            void deleteAccount()
+              .catch((error: unknown) => {
+                Alert.alert(
+                  'Account deletion failed',
+                  error instanceof Error ? error.message : 'Please check your connection and try again.'
+                );
+              })
+              .finally(() => setIsDeletingAccount(false));
+          },
+        },
+      ]
+    );
+  };
+
+  const closeSettingsInfo = () => {
+    setSettingsInfoSection(null);
+  };
+
+  const openProfileSection = (section: ProfileSection) => {
+    setSettingsVisible(false);
+    handleSectionPress(section);
+  };
+
   return (
     <View style={styles.frame}>
-      <ScrollView style={styles.content} contentContainerStyle={styles.contentInner}>
+      <ScrollView
+        ref={profileScrollRef}
+        style={styles.content}
+        contentContainerStyle={styles.contentInner}
+      >
         <AppHeader
           title="Profile"
           subtitle="SNSU Main Campus · Matching information & credentials"
           navigation={navigation}
           onSettingsPress={() => setSettingsVisible(true)}
+          showRatingCount={false}
         />
 
         {isLoadingProfile ? (
@@ -691,7 +956,7 @@ export default function ProfileScreen({
             <TouchableOpacity
               key={section.key}
               style={[styles.sectionTab, activeSection === section.key && styles.sectionTabActive]}
-              onPress={() => setActiveSection(section.key)}
+              onPress={() => handleSectionPress(section.key)}
               accessibilityRole="button"
               accessibilityState={{ selected: activeSection === section.key }}
               accessibilityLabel={`${section.label}${profileCheckReady && incompleteSections[section.key] ? ', missing required information' : ''}`}
@@ -712,6 +977,21 @@ export default function ProfileScreen({
             </TouchableOpacity>
           ))}
         </View>
+
+        {onboardingActive ? (
+          <View style={styles.onboardingStep}>
+            <Text style={styles.onboardingStepTitle}>
+              Step {activeSection === 'personal' ? '1' : activeSection === 'academic' ? '2' : '3'} of 3
+            </Text>
+            <Text style={styles.onboardingStepText}>
+              {activeSection === 'personal'
+                ? 'Confirm your name, then save to continue to academic information.'
+                : activeSection === 'academic'
+                  ? 'Choose your department, program, and year level, then save to continue.'
+                  : 'Complete your study preferences to unlock the rest of MatchLearn.'}
+            </Text>
+          </View>
+        ) : null}
 
         {activeSection === 'personal' ? <View style={styles.sectionCard}>
           <Text style={styles.sectionTitle}>Personal Information</Text>
@@ -743,15 +1023,21 @@ export default function ProfileScreen({
             </View>
           </View>
           <View style={styles.fieldGroup}>
-            <Text style={styles.label}>Full name</Text>
+            <Text style={styles.label}>Full name *</Text>
             <TextInput
               value={displayName}
               onChangeText={setDisplayName}
-              style={styles.input}
+              style={[
+                styles.input,
+                shouldHighlightMissing('personal', displayName.trim().length < 2) && styles.requiredFieldError,
+              ]}
               placeholder="Full name"
               maxLength={255}
               autoCapitalize="words"
             />
+            {shouldHighlightMissing('personal', displayName.trim().length < 2)
+              ? <Text style={styles.requiredFieldHint}>Enter your name to continue</Text>
+              : null}
           </View>
           <View style={styles.fieldGroup}>
             <Text style={styles.label}>Email</Text>
@@ -849,12 +1135,23 @@ export default function ProfileScreen({
 
         {activeSection === 'preferences' ? <View style={styles.sectionCard}>
           <Text style={styles.sectionTitle}>Study Match Preferences</Text>
+          <Text style={styles.courseFormatWarning}>
+            Strictly follow the text format shown below when adding a course.
+          </Text>
 
-          <View style={styles.fieldGroup}>
+          <View style={[
+            styles.fieldGroup,
+            !studyCourses.length && styles.requiredFieldContainer,
+          ]}>
             <Text style={styles.label}>Courses you are studying</Text>
             <Text style={styles.fieldDescription}>
-              Enter the course code first, then the course name. Matching uses the course code.
+              Optional. Add at least one course to improve your study matches.
             </Text>
+            <View style={styles.courseFormatExample}>
+              <Text style={styles.courseFormatLabel}>Required format</Text>
+              <Text style={styles.courseFormatText}>COURSE CODE - Course Name</Text>
+              <Text style={styles.courseFormatExampleText}>IT 213 - Database Management Systems</Text>
+            </View>
             {studyCourses.map((course) => (
               <View key={course.normalized_course_code} style={styles.courseItem}>
                 <View style={styles.courseCopy}>
@@ -876,7 +1173,11 @@ export default function ProfileScreen({
               <TextInput
                 value={courseDraft}
                 onChangeText={setCourseDraft}
-                style={[styles.input, styles.courseInput]}
+                style={[
+                  styles.input,
+                  styles.courseInput,
+                  !studyCourses.length && styles.requiredFieldError,
+                ]}
                 placeholder="IT 213 - Database Management Systems"
                 maxLength={165}
                 returnKeyType="done"
@@ -886,6 +1187,9 @@ export default function ProfileScreen({
                 <Text style={styles.addTagButtonText}>Add</Text>
               </TouchableOpacity>
             </View>
+            {!studyCourses.length
+              ? <Text style={styles.requiredFieldHint}>Course is optional for setup, but add one to clear this reminder.</Text>
+              : null}
           </View>
 
           {renderPickerField('preferredTime', 'Preferred Study Time', profile.preferredTime)}
@@ -898,7 +1202,10 @@ export default function ProfileScreen({
           ) : null}
           <View style={styles.fieldGroup}>
             <Text style={styles.label}>Days available to study</Text>
-            <View style={styles.dayChoices}>
+            <View style={[
+              styles.dayChoices,
+              shouldHighlightMissing('preferences', !availabilityDays.length) && styles.requiredFieldContainer,
+            ]}>
               {weekdays.map((day) => {
                 const selected = availabilityDays.includes(day);
                 return (
@@ -916,15 +1223,32 @@ export default function ProfileScreen({
                 );
               })}
             </View>
+            {shouldHighlightMissing('preferences', !availabilityDays.length)
+              ? <Text style={styles.requiredFieldHint}>Choose at least one available day</Text>
+              : null}
           </View>
 
-          {renderTagEditor('academicStrengths', 'What are you good at?', 'e.g. Programming, Mathematics', catalog.strengths.map((item) => item.name))}
-          {renderTagEditor('academicNeeds', 'What do you need help with?', 'e.g. Databases, Networking', catalog.weaknesses.map((item) => item.name))}
+          {renderTagEditor(
+            'academicStrengths',
+            'Strengths',
+            'Subjects or skills you feel confident in and can help other students learn.',
+            'Add a subject or skill you can help with'
+          )}
+          {renderTagEditor(
+            'academicNeeds',
+            'Weaknesses',
+            'Subjects or skills you want to practice or get help learning. Your strengths can complement another student’s needs, and vice versa.',
+            'Add a subject or skill you want help with'
+          )}
 
         </View> : null}
 
-        <TouchableOpacity style={styles.saveButton} onPress={() => { void handleSave(); }}>
-          <Text style={styles.saveButtonText}>Save Profile Changes</Text>
+        <TouchableOpacity style={styles.saveButton} onPress={() => { void handleSectionSave(); }}>
+          <Text style={styles.saveButtonText}>
+            {onboardingActive
+              ? activeSection === 'preferences' ? 'Save and finish setup' : 'Save and continue'
+              : 'Save Profile Changes'}
+          </Text>
         </TouchableOpacity>
         <TouchableOpacity
           style={styles.signOutButton}
@@ -935,6 +1259,76 @@ export default function ProfileScreen({
           <Text style={styles.signOutButtonText}>Sign Out</Text>
         </TouchableOpacity>
       </ScrollView>
+
+      <Modal
+        transparent
+        visible={tagPickerField !== null}
+        animationType="slide"
+        onRequestClose={() => setTagPickerField(null)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>
+              Choose {tagPickerField === 'academicStrengths' ? 'strengths' : 'weaknesses'}
+            </Text>
+            <Text style={styles.fieldDescription}>
+              Tap a topic to add or remove it. Selected topics are marked.
+            </Text>
+            <TextInput
+              value={tagPickerSearch}
+              onChangeText={setTagPickerSearch}
+              style={styles.input}
+              placeholder="Search subjects or skills"
+              autoCapitalize="none"
+              accessibilityLabel="Search suggested subjects or skills"
+            />
+            <ScrollView
+              style={styles.optionList}
+              contentContainerStyle={styles.tagPickerList}
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator
+            >
+              {tagPickerField && academicMatchSuggestions
+                .filter((suggestion) => suggestion.toLowerCase().includes(tagPickerSearch.trim().toLowerCase()))
+                .map((suggestion) => {
+                  const selected = tags[tagPickerField].some(
+                    (tag) => tag.toLowerCase() === suggestion.toLowerCase()
+                  );
+                  return (
+                    <TouchableOpacity
+                      key={suggestion}
+                      style={styles.tagPickerOption}
+                      onPress={() => toggleSuggestedTag(tagPickerField, suggestion)}
+                      accessibilityRole="checkbox"
+                      accessibilityState={{ checked: selected }}
+                    >
+                      <Text style={[styles.tagPickerOptionText, selected && styles.tagPickerOptionTextSelected]}>
+                        {suggestion}
+                      </Text>
+                      <Ionicons
+                        name={selected ? 'checkmark-circle' : 'add-circle-outline'}
+                        size={21}
+                        color={selected ? colors.teal : '#94a3b8'}
+                      />
+                    </TouchableOpacity>
+                  );
+                })}
+              {tagPickerField && academicMatchSuggestions.filter(
+                (suggestion) => suggestion.toLowerCase().includes(tagPickerSearch.trim().toLowerCase())
+              ).length === 0 ? (
+                <Text style={styles.fieldDescription}>No suggested topics match your search.</Text>
+              ) : null}
+            </ScrollView>
+            <TouchableOpacity
+              style={styles.closeButton}
+              onPress={() => setTagPickerField(null)}
+              accessibilityRole="button"
+            >
+              <Text style={styles.closeButtonText}>Done</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
 
       <Modal
         transparent
@@ -988,24 +1382,179 @@ export default function ProfileScreen({
       >
         <View style={styles.settingsOverlay}>
           <View style={styles.settingsCard}>
-            <Text style={styles.modalTitle}>Settings</Text>
-            <Text style={styles.settingsName}>{user?.name || 'Student'}</Text>
-            {user?.email ? <Text style={styles.settingsEmail}>{user.email}</Text> : null}
-            <Text style={styles.settingsDescription}>
-              Update your profile and study preferences on this page.
+            <ScrollView
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={styles.settingsContent}
+            >
+              <View style={styles.settingsHeader}>
+                <View>
+                  <Text style={styles.modalTitle}>Settings</Text>
+                  <Text style={styles.settingsDescription}>Account, privacy, and app information</Text>
+                </View>
+                <TouchableOpacity
+                  onPress={() => setSettingsVisible(false)}
+                  accessibilityRole="button"
+                  accessibilityLabel="Close settings"
+                  style={styles.settingsCloseIcon}
+                >
+                  <Ionicons name="close" size={20} color="#475569" />
+                </TouchableOpacity>
+              </View>
+
+              <View style={styles.settingsSection}>
+                <Text style={styles.settingsSectionTitle}>ACCOUNT</Text>
+                <View style={styles.accountSummary}>
+                  <View style={styles.accountAvatar}>
+                    <Text style={styles.accountAvatarText}>
+                      {(user?.name || 'Student').slice(0, 1).toUpperCase()}
+                    </Text>
+                  </View>
+                  <View style={styles.settingsActionCopy}>
+                    <Text style={styles.settingsName}>{user?.name || 'Student'}</Text>
+                    {user?.email ? <Text style={styles.settingsEmail}>{user.email}</Text> : null}
+                  </View>
+                </View>
+                <SettingsAction
+                  icon="person-outline"
+                  title="Edit personal information"
+                  description="Update your name, contact details, and visibility"
+                  onPress={() => openProfileSection('personal')}
+                />
+                <SettingsAction
+                  icon="school-outline"
+                  title="Academic information"
+                  description="Manage your department, program, and year level"
+                  onPress={() => openProfileSection('academic')}
+                />
+              </View>
+
+              <View style={styles.settingsSection}>
+                <Text style={styles.settingsSectionTitle}>PRIVACY &amp; SAFETY</Text>
+                <View style={styles.settingsInfoCard}>
+                  <Ionicons name="shield-checkmark-outline" size={19} color={colors.teal} />
+                  <Text style={styles.settingsInfoText}>
+                    Choose whether your phone number and address are visible when you edit your personal profile. Keep them private unless you want study buddies to see them.
+                  </Text>
+                </View>
+                <SettingsAction
+                  icon="eye-outline"
+                  title="Profile visibility"
+                  description={`Phone ${profile.phoneNumberPublic ? 'public' : 'private'} · Address ${profile.addressPublic ? 'public' : 'private'}`}
+                  onPress={() => openProfileSection('personal')}
+                />
+                <SettingsAction
+                  icon="flag-outline"
+                  title="Reporting and safety"
+                  description="Open a buddy profile to report a safety or conduct concern"
+                  onPress={() => {
+                    setSettingsVisible(false);
+                    if (onboardingActive) {
+                      warnAboutIncompleteProfile();
+                      return;
+                    }
+                    navigation.navigate('Buddies');
+                  }}
+                />
+                <TouchableOpacity
+                  style={styles.settingsTextAction}
+                  onPress={() => setSettingsInfoSection('privacy')}
+                  accessibilityRole="button"
+                >
+                  <Text style={styles.settingsTextActionLabel}>Privacy information</Text>
+                  <Ionicons name="chevron-forward" size={17} color={colors.teal} />
+                </TouchableOpacity>
+              </View>
+
+              <View style={styles.settingsSection}>
+                <Text style={styles.settingsSectionTitle}>NOTIFICATIONS</Text>
+                <SettingsAction
+                  icon="notifications-outline"
+                  title="Activity notifications"
+                  description="View buddy requests, group activity, and study-session updates"
+                  onPress={() => {
+                    setSettingsVisible(false);
+                    if (onboardingActive) {
+                      warnAboutIncompleteProfile();
+                      return;
+                    }
+                    navigation.navigate('Home', { screen: 'Notifications' });
+                  }}
+                />
+                <Text style={styles.settingsFootnote}>
+                  Notification preference controls are not available yet.
+                </Text>
+              </View>
+
+              <View style={styles.settingsSection}>
+                <Text style={styles.settingsSectionTitle}>ABOUT</Text>
+                <SettingsAction
+                  icon="information-circle-outline"
+                  title="About MatchLearn"
+                  description={`Version ${APP_VERSION} · Student study-buddy and group learning`}
+                  onPress={() => setSettingsInfoSection('about')}
+                />
+                <Text style={styles.settingsFootnote}>
+                  Support contact, privacy policy, and terms links have not been configured yet.
+                </Text>
+              </View>
+
+              <View style={styles.settingsActionsFooter}>
+                <TouchableOpacity
+                  style={styles.signOutButton}
+                  disabled={isDeletingAccount}
+                  onPress={() => {
+                    setSettingsVisible(false);
+                    confirmSignOut();
+                  }}
+                  accessibilityRole="button"
+                  accessibilityLabel="Sign out"
+                >
+                  <Text style={styles.signOutButtonText}>Sign Out</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.deleteAccountButton}
+                  disabled={isDeletingAccount}
+                  onPress={() => {
+                    setSettingsVisible(false);
+                    confirmDeleteAccount();
+                  }}
+                  accessibilityRole="button"
+                  accessibilityLabel="Delete account"
+                  accessibilityState={{ disabled: isDeletingAccount }}
+                >
+                  <Text style={styles.deleteAccountButtonText}>
+                    {isDeletingAccount ? 'Deleting account...' : 'Delete Account'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        transparent
+        visible={settingsInfoSection !== null}
+        animationType="fade"
+        onRequestClose={closeSettingsInfo}
+      >
+        <View style={styles.infoOverlay}>
+          <View style={styles.infoCard}>
+            <Text style={styles.modalTitle}>
+              {settingsInfoSection === 'privacy'
+                ? 'Privacy information'
+                : 'About MatchLearn'}
+            </Text>
+            <Text style={styles.settingsInfoText}>
+              {settingsInfoSection === 'privacy'
+                ? 'MatchLearn sends account and study-profile information to its service so it can provide matching and collaboration features. Phone number and address visibility can be changed in your personal profile. Avoid sharing sensitive information in profiles or messages. For a formal privacy policy or data request, contact the app administrator or your institution.'
+                : `MatchLearn helps students discover study buddies and groups, communicate, and coordinate study sessions.\n\nVersion ${APP_VERSION}\n\nFor app support, contact the project team or your institution’s app administrator.`}
             </Text>
             <TouchableOpacity
-              style={styles.signOutButton}
-              onPress={() => {
-                setSettingsVisible(false);
-                confirmSignOut();
-              }}
+              style={styles.closeButton}
+              onPress={closeSettingsInfo}
               accessibilityRole="button"
-              accessibilityLabel="Sign out"
             >
-              <Text style={styles.signOutButtonText}>Sign Out</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.closeButton} onPress={() => setSettingsVisible(false)}>
               <Text style={styles.closeButtonText}>Close</Text>
             </TouchableOpacity>
           </View>
@@ -1062,6 +1611,17 @@ const styles = StyleSheet.create({
     marginBottom: 14,
     gap: 3,
   },
+  onboardingStep: {
+    backgroundColor: '#eff6ff',
+    borderColor: '#bfdbfe',
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    marginBottom: 14,
+  },
+  onboardingStepTitle: { color: colors.navy, fontSize: 13, fontWeight: '800' },
+  onboardingStepText: { color: '#475569', fontSize: 12, lineHeight: 17, marginTop: 3 },
   sectionTab: {
     flex: 1,
     minHeight: 54,
@@ -1179,6 +1739,43 @@ const styles = StyleSheet.create({
   fieldGroup: {
     marginBottom: 12,
   },
+  requiredFieldContainer: {
+    borderWidth: 1,
+    borderColor: '#dc2626',
+    backgroundColor: '#fef2f2',
+    borderRadius: 12,
+    padding: 8,
+  },
+  requiredFieldError: {
+    borderColor: '#dc2626',
+    backgroundColor: '#fef2f2',
+  },
+  requiredFieldHint: {
+    color: '#b91c1c',
+    fontSize: 11,
+    fontWeight: '600',
+    marginTop: 5,
+  },
+  courseFormatWarning: {
+    color: '#b91c1c',
+    fontSize: 12,
+    fontWeight: '800',
+    lineHeight: 17,
+    marginTop: -6,
+    marginBottom: 12,
+  },
+  courseFormatExample: {
+    borderWidth: 1,
+    borderColor: '#fecaca',
+    borderRadius: 10,
+    backgroundColor: '#fff7f7',
+    paddingHorizontal: 11,
+    paddingVertical: 9,
+    marginBottom: 10,
+  },
+  courseFormatLabel: { color: '#991b1b', fontSize: 10, fontWeight: '800', textTransform: 'uppercase' },
+  courseFormatText: { color: '#7f1d1d', fontSize: 12, fontWeight: '700', marginTop: 3 },
+  courseFormatExampleText: { color: '#475569', fontSize: 12, marginTop: 3 },
   tagList: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -1203,6 +1800,37 @@ const styles = StyleSheet.create({
   },
   tagInput: {
     flex: 1,
+  },
+  tagPickerButton: {
+    width: 42,
+    height: 46,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#eff6f8',
+    borderRadius: 12,
+  },
+  tagPickerList: {
+    paddingVertical: 4,
+  },
+  tagPickerOption: {
+    minHeight: 48,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#edf2f7',
+  },
+  tagPickerOptionText: {
+    flex: 1,
+    color: '#334155',
+    fontSize: 13,
+  },
+  tagPickerOptionTextSelected: {
+    color: colors.teal,
+    fontWeight: '700',
   },
   courseInputRow: {
     flexDirection: 'row',
@@ -1249,24 +1877,6 @@ const styles = StyleSheet.create({
   addTagButtonText: {
     color: '#ffffff',
     fontWeight: '700',
-  },
-  suggestionList: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 7,
-    marginTop: 8,
-  },
-  suggestionTag: {
-    borderWidth: 1,
-    borderColor: '#cbd5e1',
-    borderRadius: 14,
-    paddingHorizontal: 9,
-    paddingVertical: 6,
-  },
-  suggestionTagText: {
-    color: '#475569',
-    fontSize: 11,
-    fontWeight: '600',
   },
   dayChoices: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   dayChoice: { borderRadius: 12, borderWidth: 1, borderColor: '#dbe3eb', backgroundColor: '#fff', paddingHorizontal: 11, paddingVertical: 9 },
@@ -1353,20 +1963,42 @@ const styles = StyleSheet.create({
     backgroundColor: '#ffffff',
     borderTopLeftRadius: 22,
     borderTopRightRadius: 22,
-    padding: 20,
-    paddingBottom: 30,
+    maxHeight: '92%',
+    paddingHorizontal: 20,
+    paddingTop: 20,
   },
+  settingsContent: { paddingBottom: 28 },
   settingsOverlay: {
     flex: 1,
     justifyContent: 'flex-end',
     backgroundColor: 'rgba(15, 23, 42, 0.45)',
   },
+  settingsHeader: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 8 },
+  settingsCloseIcon: { width: 36, height: 36, borderRadius: 18, backgroundColor: '#f1f5f9', alignItems: 'center', justifyContent: 'center' },
   modalTitle: {
     fontSize: 18,
     fontWeight: '800',
     color: '#0d3b4f',
-    marginBottom: 12,
+    marginBottom: 4,
   },
+  settingsSection: { borderTopWidth: 1, borderTopColor: '#e8edf3', paddingTop: 15, marginTop: 8 },
+  settingsSectionTitle: { color: '#64748b', fontSize: 11, fontWeight: '800', letterSpacing: 0.8, marginBottom: 8 },
+  accountSummary: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 9, marginBottom: 4 },
+  accountAvatar: { width: 44, height: 44, borderRadius: 15, backgroundColor: '#e0f2fe', alignItems: 'center', justifyContent: 'center' },
+  accountAvatarText: { color: colors.teal, fontSize: 18, fontWeight: '800' },
+  settingsAction: { flexDirection: 'row', alignItems: 'center', gap: 11, minHeight: 58, paddingVertical: 9 },
+  settingsActionIcon: { width: 34, height: 34, borderRadius: 12, backgroundColor: '#eff6f8', alignItems: 'center', justifyContent: 'center' },
+  settingsActionCopy: { flex: 1 },
+  settingsActionTitle: { color: '#0f172a', fontSize: 13, fontWeight: '700' },
+  settingsActionDescription: { color: '#64748b', fontSize: 11, lineHeight: 15, marginTop: 2 },
+  settingsFootnote: { color: '#64748b', fontSize: 11, lineHeight: 16, marginTop: 3, marginBottom: 8 },
+  settingsInfoCard: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, backgroundColor: '#f0f9ff', borderRadius: 12, padding: 12, marginBottom: 4 },
+  settingsInfoText: { flex: 1, color: '#475569', fontSize: 13, lineHeight: 20 },
+  settingsTextAction: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 12 },
+  settingsTextActionLabel: { color: colors.teal, fontSize: 12, fontWeight: '700' },
+  settingsActionsFooter: { borderTopWidth: 1, borderTopColor: '#e8edf3', paddingTop: 10, marginTop: 8 },
+  infoOverlay: { flex: 1, justifyContent: 'center', paddingHorizontal: 22, backgroundColor: 'rgba(15, 23, 42, 0.5)' },
+  infoCard: { backgroundColor: '#ffffff', borderRadius: 20, padding: 20 },
   settingsName: {
     color: '#0f172a',
     fontSize: 16,
@@ -1379,10 +2011,8 @@ const styles = StyleSheet.create({
   },
   settingsDescription: {
     color: '#64748b',
-    fontSize: 13,
-    lineHeight: 19,
-    marginTop: 12,
-    marginBottom: 8,
+    fontSize: 12,
+    lineHeight: 18,
   },
   optionList: {
     maxHeight: 320,
@@ -1441,10 +2071,23 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     alignItems: 'center',
     marginTop: 12,
-    marginBottom: 24,
+    marginBottom: 8,
   },
   signOutButtonText: {
     color: '#dc2626',
+    fontWeight: '800',
+    fontSize: 15,
+  },
+  deleteAccountButton: {
+    borderWidth: 1,
+    borderColor: '#b91c1c',
+    borderRadius: 8,
+    paddingVertical: 14,
+    alignItems: 'center',
+    marginTop: 4,
+  },
+  deleteAccountButtonText: {
+    color: '#b91c1c',
     fontWeight: '800',
     fontSize: 15,
   },

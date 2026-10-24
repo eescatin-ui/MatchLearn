@@ -1,15 +1,17 @@
 {
   "expo": {
-    "name": "matchlearn",
+    "name": "MatchLearn",
     "slug": "matchlearn",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "ios": {
+      "bundleIdentifier": "com.matchlearn.app",
       "supportsTablet": true
     },
     "android": {
+      "package": "com.matchlearn.app",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
@@ -28,6 +30,11 @@
           "cameraPermission": false
         }
       ]
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "8ccfa3ee-3b6a-45d6-81ad-91fc39e2c3c9"
+      }
+    }
   }
 }

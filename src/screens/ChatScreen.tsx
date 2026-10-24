@@ -3,6 +3,7 @@ import {
   ActivityIndicator,
   Image,
   KeyboardAvoidingView,
+  Linking,
   Platform,
   ScrollView,
   StyleSheet,
@@ -12,8 +13,59 @@ import {
   View,
 } from 'react-native';
 import { Alert } from '../components/AppAlert';
+import UserRatingBadge from '../components/UserRatingBadge';
 import { ConversationRecord, fetchConversationMessages, MessageRecord, sendMessage } from '../services/api/messages';
 import { colors } from '../theme';
+
+interface MessageTextPart {
+  text: string;
+  url?: string;
+}
+
+const splitMessageLinks = (content: string): MessageTextPart[] => {
+  const parts: MessageTextPart[] = [];
+  const linkPattern = /https?:\/\/[^\s<>"']+/gi;
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = linkPattern.exec(content)) !== null) {
+    let url = match[0];
+    let trailingText = '';
+
+    while (/[.,!?;:]$/.test(url)) {
+      trailingText = url.slice(-1) + trailingText;
+      url = url.slice(0, -1);
+    }
+
+    for (const [opening, closing] of [['(', ')'], ['[', ']'], ['{', '}']]) {
+      while (url.endsWith(closing)) {
+        const openingCount = [...url].filter((character) => character === opening).length;
+        const closingCount = [...url].filter((character) => character === closing).length;
+        if (closingCount <= openingCount) break;
+
+        trailingText = url.slice(-1) + trailingText;
+        url = url.slice(0, -1);
+      }
+    }
+
+    if (!/^https?:\/\/[a-z\d.-]+(?::\d+)?(?:[/?#][^\s]*)?$/i.test(url)) {
+      continue;
+    }
+
+    if (match.index > lastIndex) {
+      parts.push({ text: content.slice(lastIndex, match.index) });
+    }
+    parts.push({ text: url, url });
+    if (trailingText) parts.push({ text: trailingText });
+    lastIndex = match.index + match[0].length;
+  }
+
+  if (lastIndex < content.length) {
+    parts.push({ text: content.slice(lastIndex) });
+  }
+
+  return parts.length > 0 ? parts : [{ text: content }];
+};
 
 export default function ChatScreen({ navigation, route }: any) {
   const { chat } = route.params;
@@ -56,6 +108,17 @@ export default function ChatScreen({ navigation, route }: any) {
     }
   };
 
+  const handleOpenLink = async (url: string) => {
+    try {
+      await Linking.openURL(url);
+    } catch (openError) {
+      Alert.alert(
+        'Could not open link',
+        openError instanceof Error ? openError.message : 'Please try again.'
+      );
+    }
+  };
+
   const lastIncomingMessageIndex = conversation.type === 'direct'
     ? messages.reduce((lastIndex, message, index) => (
       message.sender === 'them' ? index : lastIndex
@@ -65,8 +128,7 @@ export default function ChatScreen({ navigation, route }: any) {
   return (
     <KeyboardAvoidingView
       style={styles.frame}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      keyboardVerticalOffset={Platform.OS === 'ios' ? 88 : 0}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
       <View style={styles.header}>
         <TouchableOpacity onPress={() => navigation.goBack()} accessibilityRole="button" accessibilityLabel="Go back">
@@ -85,7 +147,11 @@ export default function ChatScreen({ navigation, route }: any) {
           </TouchableOpacity>
         </View>
       ) : (
-        <ScrollView style={styles.messagesWrap} contentContainerStyle={styles.messagesContent}>
+        <ScrollView
+          style={styles.messagesWrap}
+          contentContainerStyle={styles.messagesContent}
+          keyboardShouldPersistTaps="handled"
+        >
           {messages.length === 0 ? <Text style={styles.notice}>No messages yet. Start the conversation.</Text> : null}
           {messages.map((message, index) => (
             <View
@@ -96,15 +162,27 @@ export default function ChatScreen({ navigation, route }: any) {
               >
                 {message.sender === 'them' ? (
                   message.user?.profile_photo_url || conversation.profile_photo_url ? (
-                    <Image
-                      source={{ uri: message.user?.profile_photo_url ?? conversation.profile_photo_url ?? undefined }}
-                      style={styles.messageAvatar}
-                    />
+                    <View style={styles.messageAvatarWrap}>
+                      <Image
+                        source={{ uri: message.user?.profile_photo_url ?? conversation.profile_photo_url ?? undefined }}
+                        style={styles.messageAvatar}
+                      />
+                      <UserRatingBadge
+                        averageRating={message.user?.average_rating ?? conversation.average_rating}
+                        ratingsCount={message.user?.ratings_count ?? conversation.ratings_count}
+                      />
+                    </View>
                   ) : (
-                    <View style={[styles.messageAvatar, styles.messageAvatarFallback]}>
-                      <Text style={styles.messageAvatarText}>
-                        {(message.user?.name ?? conversation.name).slice(0, 2).toUpperCase()}
-                      </Text>
+                    <View style={styles.messageAvatarWrap}>
+                      <View style={[styles.messageAvatar, styles.messageAvatarFallback]}>
+                        <Text style={styles.messageAvatarText}>
+                          {(message.user?.name ?? conversation.name).slice(0, 2).toUpperCase()}
+                        </Text>
+                      </View>
+                      <UserRatingBadge
+                        averageRating={message.user?.average_rating ?? conversation.average_rating}
+                        ratingsCount={message.user?.ratings_count ?? conversation.ratings_count}
+                      />
                     </View>
                   )
                 ) : (
@@ -114,7 +192,26 @@ export default function ChatScreen({ navigation, route }: any) {
                   <Text style={[styles.senderName, message.sender === 'me' && styles.senderNameMine]}>
                     {message.sender === 'me' ? 'You' : message.user?.name || (conversation.type === 'direct' ? conversation.name : 'Group member')}
                   </Text>
-                  <Text style={[styles.messageText, message.sender === 'me' && styles.messageTextMine]}>{message.content}</Text>
+                  <Text style={[styles.messageText, message.sender === 'me' && styles.messageTextMine]}>
+                    {splitMessageLinks(message.content).map((part, partIndex) => {
+                      if (!part.url) {
+                        return <Text key={`text:${partIndex}`}>{part.text}</Text>;
+                      }
+
+                      const url = part.url;
+                      return (
+                        <Text
+                          key={`${url}:${partIndex}`}
+                          accessibilityRole="link"
+                          accessibilityHint="Opens this website in your browser"
+                          onPress={() => { void handleOpenLink(url); }}
+                          style={[styles.messageLink, message.sender === 'me' && styles.messageLinkMine]}
+                        >
+                          {part.text}
+                        </Text>
+                      );
+                    })}
+                  </Text>
                 </View>
               </View>
               {index === lastIncomingMessageIndex ? (
@@ -156,6 +253,7 @@ const styles = StyleSheet.create({
   messageRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 8, marginBottom: 10 },
   messageRowMine: { justifyContent: 'flex-end' },
   messageRowThem: { justifyContent: 'flex-start' },
+  messageAvatarWrap: { width: 30, height: 30, position: 'relative', marginRight: 6 },
   messageAvatar: { width: 30, height: 30, borderRadius: 11 },
   messageAvatarFallback: { backgroundColor: colors.teal, alignItems: 'center', justifyContent: 'center' },
   messageAvatarText: { color: '#fff', fontSize: 10, fontWeight: '800' },
@@ -164,6 +262,8 @@ const styles = StyleSheet.create({
   messageThem: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border },
   messageText: { color: colors.text, fontSize: 14, lineHeight: 20 },
   messageTextMine: { color: '#fff' },
+  messageLink: { color: colors.teal, textDecorationLine: 'underline' },
+  messageLinkMine: { color: '#bfdbfe' },
   seenReceipt: { color: colors.muted, fontSize: 10, fontWeight: '600', textAlign: 'left', marginLeft: 38, marginTop: -6, marginBottom: 8 },
   senderName: { color: '#64748b', fontSize: 11, fontWeight: '700', marginBottom: 3 },
   senderNameMine: { color: '#dbeafe' },

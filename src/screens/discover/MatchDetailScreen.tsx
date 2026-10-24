@@ -11,6 +11,7 @@ import {
 } from '../../services/api/buddies';
 import { getMatchScoreColors } from '../../utils/matchScoreColors';
 import { colors } from '../../theme';
+import UserRatingBadge from '../../components/UserRatingBadge';
 
 export default function MatchDetailScreen({ route, navigation }: any) {
   const [startingChat, setStartingChat] = useState(false);
@@ -116,13 +117,16 @@ export default function MatchDetailScreen({ route, navigation }: any) {
 
         <View style={styles.profileHero}>
           <View style={styles.heroTopRow}>
-            {user.profile?.profile_photo_url ? (
-              <Image source={{ uri: user.profile.profile_photo_url }} style={styles.profileImage} accessibilityLabel={`${user.name}'s profile photo`} />
-            ) : (
-              <View style={styles.profileAvatar}>
-                <Text style={styles.profileAvatarText}>{user.name.slice(0, 2).toUpperCase()}</Text>
-              </View>
-            )}
+            <View style={styles.profileImageWrap}>
+              {user.profile?.profile_photo_url ? (
+                <Image source={{ uri: user.profile.profile_photo_url }} style={styles.profileImage} accessibilityLabel={`${user.name}'s profile photo`} />
+              ) : (
+                <View style={styles.profileAvatar}>
+                  <Text style={styles.profileAvatarText}>{user.name.slice(0, 2).toUpperCase()}</Text>
+                </View>
+              )}
+              <UserRatingBadge averageRating={user.average_rating} ratingsCount={user.ratings_count} />
+            </View>
             <View style={styles.heroIdentity}>
               <Text style={styles.title}>{user.name}</Text>
               <Text style={styles.program}>{user.profile?.program ?? 'SNSU student'}</Text>
@@ -341,6 +345,7 @@ const styles = StyleSheet.create({
   heroTopRow: { flexDirection: 'row', alignItems: 'center', gap: 13 },
   heroIdentity: { flex: 1, gap: 4 },
   profileImage: { width: 72, height: 72, borderRadius: 16 },
+  profileImageWrap: { width: 72, height: 72, position: 'relative' },
   profileAvatar: { width: 72, height: 72, borderRadius: 16, backgroundColor: colors.tealLight, alignItems: 'center', justifyContent: 'center' },
   profileAvatarText: { color: colors.teal, fontSize: 23, fontWeight: '800' },
   ratingSummary: { alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: '#fffbeb', borderRadius: 10, paddingHorizontal: 10, paddingVertical: 7 },

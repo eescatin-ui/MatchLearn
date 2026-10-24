@@ -12,9 +12,37 @@ const API_BASE_URL = `${apiRoot}/api/v1`;
 
 const TOKEN_KEY = 'auth_token';
 
+const normalizeProfilePhotoUrls = (value: unknown): void => {
+  if (Array.isArray(value)) {
+    value.forEach(normalizeProfilePhotoUrls);
+    return;
+  }
+
+  if (!value || typeof value !== 'object') {
+    return;
+  }
+
+  const record = value as Record<string, unknown>;
+  Object.entries(record).forEach(([key, nestedValue]) => {
+    if (
+      (key === 'profile_photo_url' || key.endsWith('_profile_photo_url'))
+      && typeof nestedValue === 'string'
+    ) {
+      const absoluteUrl = nestedValue.match(/^https?:\/\/[^/]+/i);
+      if (absoluteUrl) {
+        record[key] = `${apiRoot}${nestedValue.slice(absoluteUrl[0].length)}`;
+      } else if (nestedValue.startsWith('/')) {
+        record[key] = `${apiRoot}${nestedValue}`;
+      }
+      return;
+    }
+
+    normalizeProfilePhotoUrls(nestedValue);
+  });
+};
+
 const PUBLIC_AUTH_ENDPOINTS = [
-  '/auth/login',
-  '/auth/register',
+  '/auth/google',
 ];
 
 const isPublicAuthEndpoint = (url?: string) => {
@@ -135,6 +163,7 @@ export class ApiClient {
      */
     this.client.interceptors.response.use(
       (response) => {
+        normalizeProfilePhotoUrls(response.data);
         return response;
       },
       async (error: AxiosError) => {

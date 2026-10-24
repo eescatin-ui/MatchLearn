@@ -6,12 +6,14 @@ import { useAuth } from '../context/AuthContext';
 import { fetchNotifications } from '../services/api/notifications';
 import { getUserInitials } from '../utils/user';
 import { colors } from '../theme';
+import UserRatingBadge from './UserRatingBadge';
 
 interface AppHeaderProps {
   title: string;
   subtitle?: string;
   navigation: any;
   onSettingsPress?: () => void;
+  showRatingCount?: boolean;
 }
 
 export default function AppHeader({
@@ -19,6 +21,7 @@ export default function AppHeader({
   subtitle,
   navigation,
   onSettingsPress,
+  showRatingCount = true,
 }: AppHeaderProps) {
   const { user } = useAuth();
   const initials = getUserInitials(user?.name || 'Student');
@@ -76,15 +79,22 @@ export default function AppHeader({
             accessibilityRole="button"
             accessibilityLabel="Open profile"
           >
-            {user?.profile?.profile_photo_url || user?.profile_photo_url ? (
-              <Image
-                source={{ uri: user.profile?.profile_photo_url ?? user.profile_photo_url ?? '' }}
-                style={styles.avatarImage}
-                accessibilityLabel={`${user.name}'s profile photo`}
+            <View style={styles.userAvatarWrap}>
+              {user?.profile?.profile_photo_url || user?.profile_photo_url ? (
+                <Image
+                  source={{ uri: user.profile?.profile_photo_url ?? user.profile_photo_url ?? '' }}
+                  style={styles.avatarImage}
+                  accessibilityLabel={`${user.name}'s profile photo`}
+                />
+              ) : (
+                <Text style={styles.avatarText}>{initials}</Text>
+              )}
+              <UserRatingBadge
+                averageRating={user?.average_rating}
+                ratingsCount={user?.ratings_count}
+                showRatingsCount={showRatingCount}
               />
-            ) : (
-              <Text style={styles.avatarText}>{initials}</Text>
-            )}
+            </View>
           </TouchableOpacity>
         )}
       </View>
@@ -163,6 +173,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  userAvatarWrap: { width: 38, height: 38, position: 'relative', alignItems: 'center', justifyContent: 'center' },
   avatarText: {
     color: colors.teal,
     fontSize: 14,

@@ -2,7 +2,9 @@ import React, { useCallback, useState } from 'react';
 import {
   ActivityIndicator,
   Image,
+  KeyboardAvoidingView,
   Modal,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -23,6 +25,7 @@ import {
 } from '../services/api/schedule';
 import AppHeader from '../components/AppHeader';
 import GroupAvatar from '../components/GroupAvatar';
+import UserRatingBadge from '../components/UserRatingBadge';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../context/AuthContext';
 import { useFocusEffect } from '@react-navigation/native';
@@ -43,19 +46,23 @@ function SessionTargetAvatar({ session, size = 36 }: { session: StudySessionReco
     );
   }
 
-  if (session.other_user_profile_photo_url) {
-    return (
-      <Image
-        source={{ uri: session.other_user_profile_photo_url }}
-        style={[styles.sessionTargetAvatar, { width: size, height: size, borderRadius: size * 0.32 }]}
-        accessibilityLabel={`${session.other_user_name}'s profile photo`}
-      />
-    );
-  }
-
   return (
-    <View style={[styles.sessionTargetAvatar, styles.sessionTargetFallback, { width: size, height: size, borderRadius: size * 0.32 }]}>
-      <Text style={styles.sessionTargetInitials}>{session.other_user_name.slice(0, 2).toUpperCase()}</Text>
+    <View style={[styles.sessionAvatarWrap, { width: size, height: size }]}>
+      {session.other_user_profile_photo_url ? (
+        <Image
+          source={{ uri: session.other_user_profile_photo_url }}
+          style={[styles.sessionTargetAvatar, { width: size, height: size, borderRadius: size * 0.32 }]}
+          accessibilityLabel={`${session.other_user_name}'s profile photo`}
+        />
+      ) : (
+        <View style={[styles.sessionTargetAvatar, styles.sessionTargetFallback, { width: size, height: size, borderRadius: size * 0.32 }]}>
+          <Text style={styles.sessionTargetInitials}>{session.other_user_name.slice(0, 2).toUpperCase()}</Text>
+        </View>
+      )}
+      <UserRatingBadge
+        averageRating={session.other_user_average_rating}
+        ratingsCount={session.other_user_ratings_count}
+      />
     </View>
   );
 }
@@ -63,6 +70,36 @@ function SessionTargetAvatar({ session, size = 36 }: { session: StudySessionReco
 const getLocalDateKey = (date: Date) => (
   `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
 );
+
+type SessionDateTone = 'blue' | 'green' | 'yellow' | 'orange' | 'red' | 'purple' | 'gray';
+
+const sessionDateToneColors: Record<SessionDateTone, { background: string; foreground: string }> = {
+  blue: { background: '#dbeafe', foreground: '#1d4ed8' },
+  green: { background: '#dcfce7', foreground: '#15803d' },
+  yellow: { background: '#fef9c3', foreground: '#a16207' },
+  orange: { background: '#ffedd5', foreground: '#c2410c' },
+  red: { background: '#fee2e2', foreground: '#b91c1c' },
+  purple: { background: '#f3e8ff', foreground: '#7e22ce' },
+  gray: { background: '#f1f5f9', foreground: '#64748b' },
+};
+
+const getSessionDateTone = (session: StudySessionRecord, now = new Date()): SessionDateTone => {
+  if (session.status === 'completed') return 'gray';
+
+  const startsAt = new Date(session.starts_at);
+  const endsAt = session.ends_at ? new Date(session.ends_at) : startsAt;
+  if (session.is_past || endsAt.getTime() < now.getTime()) return 'purple';
+
+  const todayOrdinal = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
+  const sessionOrdinal = Date.UTC(startsAt.getFullYear(), startsAt.getMonth(), startsAt.getDate());
+  const daysUntil = Math.round((sessionOrdinal - todayOrdinal) / 86400000);
+
+  if (daysUntil <= 0) return 'red';
+  if (daysUntil <= 3) return 'orange';
+  if (daysUntil <= 7) return 'yellow';
+  if (daysUntil < 14) return 'green';
+  return 'blue';
+};
 
 const getDefaultStartTime = () => {
   const date = new Date();
@@ -225,6 +262,7 @@ export default function ScheduleScreen({ navigation }: any) {
             starts_at: startsAt.toISOString(),
             ends_at: endsAt.toISOString(),
             location: location.trim(),
+            ...(['completed', 'cancelled'].includes(editingSession.status) ? { status: 'pending' as const } : {}),
           })
         : await createStudySession({
             ...(participantId !== null
@@ -254,11 +292,11 @@ export default function ScheduleScreen({ navigation }: any) {
       setDateTimeDraft(null);
       Alert.alert(
         editingSession
-          ? ['completed', 'cancelled'].includes(editingSession.status) ? 'Session rescheduled' : 'Session updated'
+          ? ['completed', 'cancelled'].includes(editingSession.status) ? 'Invitation sent' : 'Session updated'
           : 'Invitation sent',
         editingSession
           ? ['completed', 'cancelled'].includes(editingSession.status)
-            ? 'Your session has been rescheduled and is active again.'
+            ? 'Your session was rescheduled and a new invitation was sent. It will be confirmed when participants accept.'
             : 'Your study session details have been updated.'
           : groupId ? 'Members of your joined group can confirm or decline the session.' : 'Your study buddy can confirm or decline the session.'
       );
@@ -291,10 +329,14 @@ export default function ScheduleScreen({ navigation }: any) {
   };
 
   const removeSession = (session: StudySessionRecord) => {
-    Alert.alert('Delete study session?', `Permanently delete "${session.topic}"${session.status === 'completed' ? ' and its reviews' : ''}?`, [
+    const isCreator = session.host_user_id === user?.id;
+    const confirmationMessage = isCreator
+      ? `Permanently delete "${session.topic}"${session.status === 'completed' ? ' and its reviews' : ''}?`
+      : `Remove "${session.topic}" from your session list? It will remain visible to the session creator.`;
+    Alert.alert(isCreator ? 'Delete study session?' : 'Remove study session?', confirmationMessage, [
       { text: 'Keep session', style: 'cancel' },
       {
-        text: 'Delete session',
+        text: isCreator ? 'Delete session' : 'Remove session',
         style: 'destructive',
         onPress: () => {
           void deleteStudySession(session.id)
@@ -323,7 +365,8 @@ export default function ScheduleScreen({ navigation }: any) {
         return session.status === 'cancelled';
       });
   const selectedDateKey = getLocalDateKey(selectedCalendarDate);
-  const sessionsForSelectedDate = filteredSessions.filter(
+  const calendarSessions = sessions.filter((session) => session.status === 'confirmed');
+  const sessionsForSelectedDate = calendarSessions.filter(
     (session) => getLocalDateKey(new Date(session.starts_at)) === selectedDateKey
   );
 
@@ -383,7 +426,7 @@ export default function ScheduleScreen({ navigation }: any) {
 
         <View style={styles.listHeading}>
           <View>
-            <Text style={styles.listTitle}>{viewMode === 'calendar' ? 'Schedule calendar' : 'Your sessions'}</Text>
+            <Text style={styles.listTitle}>{viewMode === 'calendar' ? 'Confirmed schedule' : 'Your sessions'}</Text>
             <Text style={styles.listCount}>
               {viewMode === 'calendar'
                 ? 'Choose a date to see its sessions'
@@ -419,7 +462,7 @@ export default function ScheduleScreen({ navigation }: any) {
             <ScheduleCalendar
               month={calendarMonth}
               selectedDate={selectedCalendarDate}
-              sessions={filteredSessions}
+              sessions={calendarSessions}
               onChangeMonth={setCalendarMonth}
               onSelectDate={setSelectedCalendarDate}
             />
@@ -455,10 +498,16 @@ export default function ScheduleScreen({ navigation }: any) {
                     accessibilityRole="button"
                     accessibilityLabel={`View ${session.topic} in the session list`}
                   >
-                    <View style={[styles.agendaAccent, session.status === 'confirmed' ? styles.agendaAccentGreen : session.status === 'pending' ? styles.agendaAccentAmber : styles.agendaAccentPurple]} />
+                    <View style={[
+                      styles.agendaAccent,
+                      { backgroundColor: sessionDateToneColors[getSessionDateTone(session)].foreground },
+                    ]} />
                     <View style={styles.agendaCardContent}>
                       <View style={styles.agendaTimeRow}>
-                        <Text style={styles.agendaTime}>
+                        <Text style={[
+                          styles.agendaTime,
+                          { color: sessionDateToneColors[getSessionDateTone(session)].foreground },
+                        ]}>
                           {new Date(session.starts_at).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit', hour12: true })}
                         </Text>
                         <Text style={styles.agendaStatus}>
@@ -505,6 +554,8 @@ export default function ScheduleScreen({ navigation }: any) {
             {filteredSessions.map((session, index) => {
           const isCreator = session.host_user_id === user?.id;
           const startDate = new Date(session.starts_at);
+          const dateTone = getSessionDateTone(session);
+          const dateToneColors = sessionDateToneColors[dateTone];
           return (
             <React.Fragment key={session.id}>
             {session.status === 'cancelled' && (
@@ -516,10 +567,10 @@ export default function ScheduleScreen({ navigation }: any) {
             )}
             <View style={[styles.card, index === filteredSessions.length - 1 && styles.cardLast]}>
               <View style={styles.sessionMain}>
-                <View style={styles.dateTile}>
-                  <Text style={styles.dateMonth}>{startDate.toLocaleDateString(undefined, { month: 'short' }).toUpperCase()}</Text>
-                  <Text style={styles.dateDay}>{startDate.getDate()}</Text>
-                  <Text style={styles.dateWeekday}>{startDate.toLocaleDateString(undefined, { weekday: 'short' })}</Text>
+                <View style={[styles.dateTile, { backgroundColor: dateToneColors.background }]}>
+                  <Text style={[styles.dateMonth, { color: dateToneColors.foreground }]}>{startDate.toLocaleDateString(undefined, { month: 'short' }).toUpperCase()}</Text>
+                  <Text style={[styles.dateDay, { color: dateToneColors.foreground }]}>{startDate.getDate()}</Text>
+                  <Text style={[styles.dateWeekday, { color: dateToneColors.foreground }]}>{startDate.toLocaleDateString(undefined, { weekday: 'short' })}</Text>
                 </View>
                 <View style={styles.sessionInfo}>
                   <View style={styles.sessionTitleRow}>
@@ -557,8 +608,8 @@ export default function ScheduleScreen({ navigation }: any) {
                     </Text>
                   </View>
                   <View style={styles.detailLine}>
-                    <Ionicons name="time-outline" size={15} color="#64748b" />
-                    <Text style={styles.detailText} numberOfLines={1}>
+                    <Ionicons name="time-outline" size={15} color={dateToneColors.foreground} />
+                    <Text style={[styles.detailText, { color: dateToneColors.foreground }]} numberOfLines={1}>
                       {startDate.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit', hour12: true })}
                       {session.ends_at ? ` – ${new Date(session.ends_at).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit', hour12: true })}` : ''}
                     </Text>
@@ -586,10 +637,17 @@ export default function ScheduleScreen({ navigation }: any) {
                 {!isCreator && session.status === 'confirmed' && !session.is_past ? (
                   <SessionAction icon="close-circle-outline" label="Cancel" kind="danger" onPress={() => cancelSession(session)} />
                 ) : null}
-                {['completed', 'cancelled'].includes(session.status) && isCreator && (
+                {['completed', 'cancelled'].includes(session.status) && (
                   <>
-                    <SessionAction icon="calendar-outline" label="Reschedule" kind="primary" onPress={() => openEditForm(session)} />
-                    <SessionAction icon="trash-outline" label="Delete" kind="danger" onPress={() => removeSession(session)} />
+                    {isCreator && (
+                      <SessionAction icon="calendar-outline" label="Reschedule" kind="primary" onPress={() => openEditForm(session)} />
+                    )}
+                    <SessionAction
+                      icon="trash-outline"
+                      label={isCreator ? 'Delete' : 'Remove'}
+                      kind="danger"
+                      onPress={() => removeSession(session)}
+                    />
                   </>
                 )}
                 {session.status === 'completed' && session.target_type === 'buddy' && session.participant_user_id !== null && (
@@ -639,11 +697,15 @@ export default function ScheduleScreen({ navigation }: any) {
       </ScrollView>
 
       <Modal visible={showCreate} transparent animationType="slide" onRequestClose={() => setShowCreate(false)}>
-        <View style={styles.modalOverlay}>
+        <KeyboardAvoidingView
+          style={styles.modalOverlay}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        >
           <ScrollView
             style={styles.modalCard}
             contentContainerStyle={styles.modalContent}
             keyboardShouldPersistTaps="handled"
+            keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
           >
             <Text style={styles.modalTitle}>
               {['completed', 'cancelled'].includes(editingSession?.status ?? '') ? 'Reschedule study session' : editingSession ? 'Edit study session' : 'Create study session'}
@@ -710,7 +772,13 @@ export default function ScheduleScreen({ navigation }: any) {
             </>
             ) : null}
 
-            <TextInput value={topic} onChangeText={setTopic} placeholder="Session topic" style={styles.input} />
+            <TextInput
+              value={topic}
+              onChangeText={setTopic}
+              placeholder="e.g. Review for IT 213"
+              style={styles.input}
+              returnKeyType="next"
+            />
             <Text style={styles.label}>Starts</Text>
             <View style={styles.dateTimeRow}>
               <DateTimeButton icon="calendar-outline" label={formatDate(startsAt)} onPress={() => openDateTimePicker('startDate')} />
@@ -741,13 +809,19 @@ export default function ScheduleScreen({ navigation }: any) {
                 </TouchableOpacity>
               </View>
             ) : null}
-            <TextInput value={location} onChangeText={setLocation} placeholder="Location" style={styles.input} />
+            <TextInput
+              value={location}
+              onChangeText={setLocation}
+              placeholder="e.g. Library, Room 204, or online"
+              style={styles.input}
+              returnKeyType="done"
+            />
             <TouchableOpacity style={[styles.primaryButton, saving && styles.disabled]} disabled={saving} onPress={() => { void handleCreate(); }}>
               <Text style={styles.primaryText}>{saving ? editingSession ? 'Saving…' : 'Sending…' : editingSession ? 'Save changes' : 'Send invitation'}</Text>
             </TouchableOpacity>
             <TouchableOpacity onPress={() => { setShowCreate(false); setEditingSession(null); }}><Text style={styles.link}>Cancel</Text></TouchableOpacity>
           </ScrollView>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
     </View>
   );
@@ -830,9 +904,6 @@ const styles = StyleSheet.create({
   scheduleCalendarDayTextSelected: { color: '#fff', fontWeight: '800' },
   calendarEventBox: { flex: 1, minHeight: 0, borderRadius: 6, paddingHorizontal: 3, paddingVertical: 2, justifyContent: 'center' },
   calendarEventBoxSelected: { backgroundColor: '#ffffff' },
-  calendarEventBoxGreen: { backgroundColor: '#dcfce7' },
-  calendarEventBoxAmber: { backgroundColor: '#fef3c7' },
-  calendarEventBoxPurple: { backgroundColor: '#f3e8ff' },
   calendarEventText: { color: '#334155', fontSize: 8, lineHeight: 10, fontWeight: '700', textAlign: 'center' },
   calendarEventTextSelected: { color: '#0d3b4f' },
   agendaHeading: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 },
@@ -842,9 +913,6 @@ const styles = StyleSheet.create({
   agendaCard: { minHeight: 72, flexDirection: 'row', alignItems: 'center', gap: 10, padding: 12, borderBottomWidth: 1, borderBottomColor: colors.border },
   agendaCardLast: { borderBottomWidth: 0 },
   agendaAccent: { width: 4, alignSelf: 'stretch', borderRadius: 3 },
-  agendaAccentGreen: { backgroundColor: '#16a34a' },
-  agendaAccentAmber: { backgroundColor: '#d97706' },
-  agendaAccentPurple: { backgroundColor: '#9333ea' },
   agendaCardContent: { flex: 1, gap: 4 },
   agendaTimeRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   agendaTime: { color: '#1a5f7a', fontSize: 11, fontWeight: '800' },
@@ -862,6 +930,7 @@ const styles = StyleSheet.create({
   dateDay: { color: colors.navy, fontSize: 24, lineHeight: 28, fontWeight: '800' },
   dateWeekday: { color: colors.muted, fontSize: 10, fontWeight: '700' },
   sessionInfo: { flex: 1, gap: 4 },
+  sessionAvatarWrap: { position: 'relative' },
   sessionTargetAvatar: { width: 36, height: 36, borderRadius: 12, backgroundColor: colors.tealLight },
   sessionTargetFallback: { alignItems: 'center', justifyContent: 'center' },
   sessionTargetInitials: { color: colors.teal, fontSize: 11, fontWeight: '800' },
@@ -1022,13 +1091,6 @@ function ScheduleCalendar({
     onSelectDate(nextSelectedDate);
   };
 
-  const getSessionEventStyle = (session: StudySessionRecord) => {
-    if (session.is_past) return styles.calendarEventBoxPurple;
-    if (session.status === 'confirmed') return styles.calendarEventBoxGreen;
-    if (session.status === 'pending') return styles.calendarEventBoxAmber;
-    return styles.calendarEventBoxGreen;
-  };
-
   return (
     <View style={styles.calendarCard}>
       <View style={styles.scheduleCalendarHeader}>
@@ -1083,7 +1145,9 @@ function ScheduleCalendar({
                 {dateSessions.length > 0 ? (
                   <View style={[
                     styles.calendarEventBox,
-                    isSelected ? styles.calendarEventBoxSelected : getSessionEventStyle(dateSessions[0]),
+                    isSelected
+                      ? styles.calendarEventBoxSelected
+                      : { backgroundColor: sessionDateToneColors[getSessionDateTone(dateSessions[0])].background },
                   ]}>
                     <Text
                       style={[styles.calendarEventText, isSelected && styles.calendarEventTextSelected]}
