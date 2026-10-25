@@ -776,6 +776,7 @@ export default function ScheduleScreen({ navigation }: any) {
               value={topic}
               onChangeText={setTopic}
               placeholder="e.g. Review for IT 213"
+              placeholderTextColor="#64748b"
               style={styles.input}
               returnKeyType="next"
             />
@@ -813,6 +814,7 @@ export default function ScheduleScreen({ navigation }: any) {
               value={location}
               onChangeText={setLocation}
               placeholder="e.g. Library, Room 204, or online"
+              placeholderTextColor="#64748b"
               style={styles.input}
               returnKeyType="done"
             />
@@ -1020,7 +1022,7 @@ const styles = StyleSheet.create({
   clockOptionSelected: { backgroundColor: '#1a5f7a' },
   clockOptionText: { color: '#334155', fontSize: 16, fontWeight: '600' },
   clockOptionTextSelected: { color: '#fff' },
-  input: { backgroundColor: '#f8fafc', borderWidth: 1, borderColor: '#dbe3eb', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 11 },
+  input: { backgroundColor: '#f8fafc', color: '#0f172a', borderWidth: 1, borderColor: '#dbe3eb', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 11 },
   disabled: { opacity: 0.6 },
 });
 

@@ -12,6 +12,7 @@
     },
     "android": {
       "package": "com.matchlearn.app",
+      "versionCode": 3,
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
@@ -22,6 +23,14 @@
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/brand-logo.png",
+          "backgroundColor": "#ffffff",
+          "imageWidth": 300
+        }
+      ],
       [
         "expo-image-picker",
         {

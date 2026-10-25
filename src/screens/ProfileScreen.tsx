@@ -1135,9 +1135,6 @@ export default function ProfileScreen({
 
         {activeSection === 'preferences' ? <View style={styles.sectionCard}>
           <Text style={styles.sectionTitle}>Study Match Preferences</Text>
-          <Text style={styles.courseFormatWarning}>
-            Strictly follow the text format shown below when adding a course.
-          </Text>
 
           <View style={[
             styles.fieldGroup,
@@ -1755,14 +1752,6 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '600',
     marginTop: 5,
-  },
-  courseFormatWarning: {
-    color: '#b91c1c',
-    fontSize: 12,
-    fontWeight: '800',
-    lineHeight: 17,
-    marginTop: -6,
-    marginBottom: 12,
   },
   courseFormatExample: {
     borderWidth: 1,

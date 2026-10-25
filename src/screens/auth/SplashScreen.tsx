@@ -6,8 +6,9 @@ export default function SplashScreen() {
   return (
     <View style={styles.container}>
       <Image
-        source={require('../../../assets/icon.png')}
+        source={require('../../../assets/brand-logo.png')}
         style={styles.logo}
+        resizeMode="contain"
       />
       <ActivityIndicator size="large" color={colors.teal} style={styles.loader} />
     </View>
@@ -22,8 +23,8 @@ const styles = StyleSheet.create({
     backgroundColor: colors.page,
   },
   logo: {
-    width: 120,
-    height: 120,
+    width: 300,
+    height: 300,
     marginBottom: 20,
   },
   loader: {

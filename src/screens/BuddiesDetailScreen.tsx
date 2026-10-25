@@ -3,7 +3,9 @@ import { useFocusEffect } from '@react-navigation/native';
 import {
   ActivityIndicator,
   Image,
+  KeyboardAvoidingView,
   Modal,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -572,14 +574,49 @@ export default function BuddiesDetailScreen({ navigation, route }: any) {
           </>
         ) : group ? (
           <>
-            <View style={styles.card}>
+            <View style={styles.groupHero}>
               <View style={styles.groupHeading}>
-                <GroupAvatar icon={group.avatar_icon} color={group.avatar_color} size={52} />
-                <View style={styles.profileCopy}>
-                  <Text style={styles.cardTitle}>{group.name}</Text>
-                  <Text style={styles.body}>{group.course}</Text>
+                <GroupAvatar icon={group.avatar_icon} color={group.avatar_color} size={62} />
+                <View style={styles.groupHeroCopy}>
+                  <Text style={styles.groupHeroTitle}>{group.name}</Text>
+                  <Text style={styles.groupHeroCourse}>{group.course}</Text>
+                  <View style={styles.groupHeroBadges}>
+                    <View style={styles.groupBadge}>
+                      <Ionicons name="people-outline" size={13} color="#1a5f7a" />
+                      <Text style={styles.groupBadgeText}>Study group</Text>
+                    </View>
+                    {group.role ? (
+                      <View style={styles.groupRoleBadge}>
+                        <Text style={styles.groupRoleText}>{group.role}</Text>
+                      </View>
+                    ) : null}
+                  </View>
                 </View>
               </View>
+              <View style={styles.groupMetrics}>
+                <View style={styles.groupMetric}>
+                  <Text style={styles.groupMetricValue}>{group.members ?? members.length}</Text>
+                  <Text style={styles.groupMetricLabel}>Members</Text>
+                </View>
+                <View style={styles.groupMetricDivider} />
+                <View style={styles.groupMetric}>
+                  <Text style={styles.groupMetricValue}>
+                    {group.average_rating == null ? '—' : group.average_rating.toFixed(1)}
+                  </Text>
+                  <Text style={styles.groupMetricLabel}>
+                    {group.ratings_count
+                      ? `${group.ratings_count} ${group.ratings_count === 1 ? 'rating' : 'ratings'}`
+                      : 'No ratings yet'}
+                  </Text>
+                </View>
+              </View>
+              <View style={styles.groupHeroFooter}>
+                <View style={styles.groupCreator}>
+                  <Ionicons name="person-outline" size={14} color="#64748b" />
+                  <Text style={styles.groupCreatorText}>
+                    {group.creator?.name ? `Created by ${group.creator.name}` : 'Study together'}
+                  </Text>
+                </View>
               {group.role?.toLowerCase() === 'admin' ? (
                 <TouchableOpacity
                   style={styles.editButton}
@@ -591,24 +628,28 @@ export default function BuddiesDetailScreen({ navigation, route }: any) {
                   <Text style={styles.editButtonText}>Edit group</Text>
                 </TouchableOpacity>
               ) : null}
-              <Text style={styles.sectionTitle}>About this group</Text>
-              <Detail label="Course" value={group.course} />
-              <Detail label="Schedule" value={group.schedule} />
-              <Detail label="Study style" value={group.study_style} />
-              <Detail label="Preferred study time" value={group.preferred_study_time} />
-              <Detail label="Study mode" value={group.study_mode?.replace('_', ' ')} />
-              <Detail label="Description" value={group.description} />
-              <Detail label="Created by" value={group.creator?.name} />
-              <Detail label="Members" value={String(group.members ?? members.length)} />
-              <Detail
-                label="Rating"
-                value={group.average_rating == null
-                  ? 'No ratings yet'
-                  : `${group.average_rating.toFixed(1)} / 5 (${group.ratings_count ?? 0})`}
-              />
+              </View>
             </View>
             <View style={styles.card}>
-              <Text style={styles.sectionTitle}>Members</Text>
+              <SectionHeading icon="calendar-outline" title="Study plan" />
+              <View style={styles.groupStudyGrid}>
+                <GroupInfoTile icon="time-outline" label="Schedule" value={group.schedule || 'Flexible'} />
+                <GroupInfoTile icon="school-outline" label="Study style" value={group.study_style} />
+                <GroupInfoTile icon="sunny-outline" label="Preferred time" value={group.preferred_study_time} />
+                <GroupInfoTile icon="laptop-outline" label="Study mode" value={group.study_mode?.replace('_', ' ')} />
+              </View>
+            </View>
+            <View style={styles.card}>
+              <SectionHeading icon="chatbox-ellipses-outline" title="About this group" />
+              <Text style={styles.groupDescription}>
+                {group.description?.trim() || 'No group description has been added yet.'}
+              </Text>
+            </View>
+            <View style={styles.card}>
+              <View style={styles.groupSectionHeading}>
+                <SectionHeading icon="people-outline" title="Members" />
+                <Text style={styles.groupMemberCount}>{members.length}</Text>
+              </View>
               {members.map((member: GroupMember) => (
                 <View key={member.id} style={styles.memberRow}>
                   <View style={styles.memberAvatarWrap}>
@@ -816,13 +857,17 @@ export default function BuddiesDetailScreen({ navigation, route }: any) {
       </Modal>
 
       <Modal visible={editVisible} transparent animationType="slide" onRequestClose={() => setEditVisible(false)}>
-        <View style={styles.modalOverlay}>
+        <KeyboardAvoidingView
+          style={styles.modalOverlay}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        >
           <View style={styles.modalCard}>
             <Text style={styles.modalTitle}>Edit study group</Text>
             <ScrollView
               style={styles.editFieldsScroll}
               contentContainerStyle={styles.editFields}
               keyboardShouldPersistTaps="handled"
+              keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
             >
               <View style={styles.avatarPreview}>
                 <GroupAvatar icon={editAvatarIcon} color={editAvatarColor} size={54} />
@@ -857,8 +902,8 @@ export default function BuddiesDetailScreen({ navigation, route }: any) {
                   />
                 ))}
               </View>
-              <TextInput value={editName} onChangeText={setEditName} placeholder="Group name" style={styles.input} maxLength={255} />
-              <TextInput value={editCourse} onChangeText={setEditCourse} placeholder="Course" style={styles.input} maxLength={255} />
+              <TextInput value={editName} onChangeText={setEditName} placeholder="Group name" placeholderTextColor="#64748b" style={styles.input} maxLength={255} />
+              <TextInput value={editCourse} onChangeText={setEditCourse} placeholder="Course" placeholderTextColor="#64748b" style={styles.input} maxLength={255} />
               <GroupPreferencePicker
                 label="Study style"
                 options={GROUP_STUDY_STYLE_OPTIONS}
@@ -877,11 +922,12 @@ export default function BuddiesDetailScreen({ navigation, route }: any) {
                 value={editStudyMode}
                 onChange={setEditStudyMode}
               />
-              <TextInput value={editSchedule} onChangeText={setEditSchedule} placeholder="Schedule (optional)" style={styles.input} maxLength={255} />
+              <TextInput value={editSchedule} onChangeText={setEditSchedule} placeholder="Schedule (optional)" placeholderTextColor="#64748b" style={styles.input} maxLength={255} />
               <TextInput
                 value={editDescription}
                 onChangeText={setEditDescription}
                 placeholder="Description (optional)"
+                placeholderTextColor="#64748b"
                 style={[styles.input, styles.descriptionInput]}
                 multiline
               />
@@ -900,7 +946,7 @@ export default function BuddiesDetailScreen({ navigation, route }: any) {
               </TouchableOpacity>
             </View>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
     </View>
   );
@@ -912,6 +958,28 @@ function Detail({ label, value }: { label: string; value?: string | number | nul
     <View style={styles.detailRow}>
       <Text style={styles.detailLabel}>{label}</Text>
       <Text style={styles.body}>{value}</Text>
+    </View>
+  );
+}
+
+function GroupInfoTile({
+  icon,
+  label,
+  value,
+}: {
+  icon: keyof typeof Ionicons.glyphMap;
+  label: string;
+  value?: string | null;
+}) {
+  return (
+    <View style={styles.groupInfoTile}>
+      <View style={styles.groupInfoIcon}>
+        <Ionicons name={icon} size={15} color="#1a5f7a" />
+      </View>
+      <View style={styles.groupInfoCopy}>
+        <Text style={styles.groupInfoLabel}>{label}</Text>
+        <Text style={styles.groupInfoValue}>{value || 'Not set'}</Text>
+      </View>
     </View>
   );
 }
@@ -1011,6 +1079,32 @@ const styles = StyleSheet.create({
   needChipText: { color: '#1e4f70', fontSize: 12, fontWeight: '700' },
   profileCopy: { flex: 1, gap: 4 },
   groupHeading: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 14 },
+  groupHero: { backgroundColor: colors.surface, borderRadius: 15, padding: 16, marginBottom: 12, gap: 15, borderWidth: 1, borderColor: colors.border },
+  groupHeroCopy: { flex: 1, minWidth: 0, gap: 4 },
+  groupHeroTitle: { color: colors.navy, fontSize: 20, lineHeight: 25, fontWeight: '800' },
+  groupHeroCourse: { color: colors.muted, fontSize: 13, lineHeight: 18 },
+  groupHeroBadges: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 6, marginTop: 3 },
+  groupBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#e8f1f5', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 5 },
+  groupBadgeText: { color: '#1a5f7a', fontSize: 10, fontWeight: '800' },
+  groupRoleBadge: { backgroundColor: '#f1f5f9', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 5 },
+  groupRoleText: { color: '#475569', fontSize: 10, fontWeight: '800', textTransform: 'capitalize' },
+  groupMetrics: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#f8fafc', borderRadius: 12, paddingVertical: 10 },
+  groupMetric: { flex: 1, alignItems: 'center', gap: 2 },
+  groupMetricValue: { color: colors.navy, fontSize: 17, fontWeight: '800' },
+  groupMetricLabel: { color: colors.muted, fontSize: 10, fontWeight: '600', textAlign: 'center' },
+  groupMetricDivider: { width: 1, height: 32, backgroundColor: colors.border },
+  groupHeroFooter: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
+  groupCreator: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 5 },
+  groupCreatorText: { color: colors.muted, fontSize: 11, flexShrink: 1 },
+  groupStudyGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  groupInfoTile: { flexGrow: 1, flexBasis: '46%', minWidth: '45%', flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: '#f8fafc', borderRadius: 11, padding: 10, borderWidth: 1, borderColor: '#e8edf2' },
+  groupInfoIcon: { width: 30, height: 30, borderRadius: 9, alignItems: 'center', justifyContent: 'center', backgroundColor: '#e8f1f5' },
+  groupInfoCopy: { flex: 1, minWidth: 0, gap: 2 },
+  groupInfoLabel: { color: colors.muted, fontSize: 10, fontWeight: '600' },
+  groupInfoValue: { color: colors.navy, fontSize: 12, fontWeight: '700', flexShrink: 1 },
+  groupDescription: { color: colors.text, backgroundColor: '#f8fafc', borderRadius: 11, padding: 12, fontSize: 13, lineHeight: 20 },
+  groupSectionHeading: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  groupMemberCount: { color: '#1a5f7a', backgroundColor: '#e8f1f5', overflow: 'hidden', borderRadius: 10, paddingHorizontal: 9, paddingVertical: 4, fontSize: 11, fontWeight: '800' },
   editButton: { flexDirection: 'row', alignSelf: 'flex-start', alignItems: 'center', gap: 6, backgroundColor: '#e8f1f5', borderRadius: 10, paddingHorizontal: 11, paddingVertical: 8 },
   editButtonText: { color: '#1a5f7a', fontSize: 12, fontWeight: '800' },
   cardTitle: { color: '#0f172a', fontSize: 15, fontWeight: '700' },
@@ -1073,6 +1167,6 @@ const styles = StyleSheet.create({
   stars: { flexDirection: 'row', gap: 10 },
   star: { fontSize: 34, color: '#cbd5e1' },
   starSelected: { color: '#f59e0b' },
-  input: { minHeight: 80, backgroundColor: '#f8fafc', borderWidth: 1, borderColor: '#dbe3eb', borderRadius: 10, padding: 12, textAlignVertical: 'top' },
+  input: { minHeight: 80, color: '#0f172a', backgroundColor: '#f8fafc', borderWidth: 1, borderColor: '#dbe3eb', borderRadius: 10, padding: 12, textAlignVertical: 'top' },
   descriptionInput: { minHeight: 64 },
 });

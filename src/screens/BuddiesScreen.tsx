@@ -2,7 +2,9 @@ import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Image,
+  KeyboardAvoidingView,
   Modal,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -521,8 +523,16 @@ export default function BuddiesScreen({ navigation, route }: any) {
       </ScrollView>
 
       <Modal visible={showCreate} transparent animationType="slide" onRequestClose={() => setShowCreate(false)}>
-        <View style={styles.modalOverlay}>
-          <ScrollView style={styles.modalCard} contentContainerStyle={styles.modalContent} keyboardShouldPersistTaps="handled">
+        <KeyboardAvoidingView
+          style={styles.modalOverlay}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        >
+          <ScrollView
+            style={styles.modalCard}
+            contentContainerStyle={styles.modalContent}
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
+          >
             <Text style={styles.modalTitle}>Create study group</Text>
             <View style={styles.avatarPreview}>
               <GroupAvatar icon={avatarIcon} color={avatarColor} size={58} />
@@ -599,7 +609,7 @@ export default function BuddiesScreen({ navigation, route }: any) {
             <TouchableOpacity style={styles.primaryButton} onPress={() => { void handleCreateGroup(); }}><Text style={styles.primaryButtonText}>Create</Text></TouchableOpacity>
             <TouchableOpacity onPress={() => setShowCreate(false)}><Text style={styles.link}>Cancel</Text></TouchableOpacity>
           </ScrollView>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
     </View>
   );
