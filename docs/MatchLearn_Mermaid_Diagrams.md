@@ -251,33 +251,56 @@ flowchart TD
     SORT --> DISPLAY["Return recommendations<br/>to Discover screen"]
 ```
 
-## 7. Study-Group Join Workflow
+## 7. Study-Group Discovery, Join Requests, Cancellation, and Invitations
 
 ```mermaid
 sequenceDiagram
     actor Student
-    actor Owner as Group owner
+    actor Admin as Group administrator
     participant App as MatchLearn mobile app
     participant API as Laravel API
     participant DB as PostgreSQL
 
-    Student->>App: Discover a study group
+    Student->>App: Open Study groups in Discover
     App->>API: GET /api/v1/groups/discover
-    API->>DB: Retrieve groups and membership data
-    DB-->>API: Group results
-    API-->>App: Ranked/discoverable groups
-    Student->>App: Request to join a group
-    App->>API: POST /api/v1/groups/{id}/join
-    API->>DB: Create or update join request
-    DB-->>API: Request status
-    API-->>App: Pending request
-    Owner->>App: Review join request
-    App->>API: PATCH /api/v1/groups/{id}/join-requests/{requestId}
-    API->>DB: Approve or decline request
-    alt Approved
-        API->>DB: Add student to group members
-        API-->>App: Membership confirmed
-    else Declined
-        API-->>App: Request declined
+    API->>DB: Retrieve discoverable groups and student's request state
+    DB-->>API: Group summaries and pending state
+    API-->>App: Groups and request or invitation status
+    Student->>App: Open any group, including as a nonmember
+    App->>API: GET /api/v1/groups/{id}
+    API->>DB: Load details, members, ratings, session total, and own status
+    DB-->>API: Group data and membership/request state
+    API-->>App: Details and permitted action
+
+    alt No membership, request, or invitation
+        Student->>App: Request to join
+        App->>API: POST /api/v1/groups/{id}/join
+        API->>DB: Create pending join request
+        API-->>App: Request pending
+    else Pending request
+        Student->>App: Cancel request
+        App->>API: DELETE /api/v1/groups/{id}/join-requests
+        API->>DB: Mark request cancelled
+        API-->>App: Request cancelled
+    else Invitation received
+        Student->>App: Accept or decline invitation
+        App->>API: PATCH /api/v1/groups/{id}/invitations/{requestId}
+        alt Accept
+            API->>DB: Add student as group member
+            API-->>App: Invitation accepted
+        else Decline
+            API->>DB: Mark invitation declined
+            API-->>App: Invitation declined
+        end
+    else Member
+        App-->>Student: Show member actions and group conversation
+    end
+
+    opt Admin invites an accepted paired buddy
+        Admin->>App: Choose buddy from Members card
+        App->>API: POST /api/v1/groups/{id}/invitations
+        API->>DB: Create invitation and activity notification
+        API-->>App: Invitation sent
+        App-->>Student: Show invitation with Accept and Decline actions
     end
 ```

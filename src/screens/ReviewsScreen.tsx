@@ -21,6 +21,7 @@ import {
   ReviewRecord,
   submitReview,
 } from '../services/api/reviews';
+import { fetchGroupDetails, fetchGroups, GroupRecord, rateGroup } from '../services/api/groups';
 
 const ratingLabels = ['Poor', 'Fair', 'Good', 'Very good', 'Excellent'];
 
@@ -31,8 +32,11 @@ export default function ReviewsScreen({ navigation, route }: any) {
   const [chosenBuddyId, setChosenBuddyId] = useState<number | null>(null);
   const [chosenBuddyName, setChosenBuddyName] = useState<string | null>(null);
   const [chosenBuddyPhoto, setChosenBuddyPhoto] = useState<string | null>(null);
+  const [chosenGroupId, setChosenGroupId] = useState<number | null>(null);
+  const [groupDetails, setGroupDetails] = useState<GroupRecord | null>(null);
   const [reviews, setReviews] = useState<ReviewRecord[]>([]);
   const [reviewableBuddies, setReviewableBuddies] = useState<ReviewableBuddy[]>([]);
+  const [groups, setGroups] = useState<GroupRecord[]>([]);
   const [averageRating, setAverageRating] = useState<number | null>(null);
   const [ratingsCount, setRatingsCount] = useState(0);
   const [rating, setRating] = useState(0);
@@ -46,9 +50,13 @@ export default function ReviewsScreen({ navigation, route }: any) {
 
   const load = useCallback(async () => {
     try {
-      const result = await fetchReviews(selectedBuddyId ?? undefined);
+      const [result, nextGroups] = await Promise.all([
+        fetchReviews(selectedBuddyId ?? undefined),
+        fetchGroups(),
+      ]);
       setReviews(result.reviews);
       setReviewableBuddies(result.reviewableBuddies);
+      setGroups(nextGroups);
       setAverageRating(result.averageRating);
       setRatingsCount(result.ratingsCount);
       setRating(result.myReview?.rating ?? 0);
@@ -98,8 +106,33 @@ export default function ReviewsScreen({ navigation, route }: any) {
 
   const selectBuddy = (buddy: ReviewableBuddy) => {
     setChosenBuddyId(buddy.id);
+    setChosenGroupId(null);
     setChosenBuddyName(buddy.name);
     setChosenBuddyPhoto(buddy.profile_photo_url);
+  };
+
+  const loadGroupForRating = async (groupId: number) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const detail = await fetchGroupDetails(groupId);
+      setGroupDetails(detail);
+      setRating(detail.my_rating ?? 0);
+      setComment('');
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : 'Unable to load this group.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const selectGroup = (group: GroupRecord) => {
+    setChosenGroupId(group.id);
+    setChosenBuddyId(null);
+    setGroupDetails(group);
+    setRating(group.my_rating ?? 0);
+    setComment('');
+    void loadGroupForRating(group.id);
   };
 
   const handleBack = () => {
@@ -109,12 +142,67 @@ export default function ReviewsScreen({ navigation, route }: any) {
       setChosenBuddyPhoto(null);
       return;
     }
+    if (chosenGroupId) {
+      setChosenGroupId(null);
+      setGroupDetails(null);
+      setRating(0);
+      setComment('');
+      setError(null);
+      return;
+    }
     navigation.goBack();
+  };
+
+  const handleSubmitGroupRating = async () => {
+    if (!chosenGroupId || !rating) {
+      Alert.alert('Choose a rating', 'Select an overall star rating before submitting.');
+      return;
+    }
+
+    try {
+      setSubmitting(true);
+      await rateGroup(chosenGroupId, rating, comment.trim());
+      const savedGroup = selectedGroup ? { ...selectedGroup, my_rating: rating } : null;
+      if (savedGroup) {
+        setGroupDetails(savedGroup);
+        setGroups((current) => current.map((group) => group.id === savedGroup.id
+          ? { ...group, ...savedGroup }
+          : group));
+      }
+
+      let updatedGroup: GroupRecord;
+      try {
+        updatedGroup = await fetchGroupDetails(chosenGroupId);
+      } catch {
+        Alert.alert('Rating saved', 'Your rating was saved, but the updated group details could not be refreshed.');
+        return;
+      }
+
+      setGroupDetails(updatedGroup);
+      setGroups((current) => current.map((group) => group.id === updatedGroup.id
+        ? { ...group, ...updatedGroup }
+        : group));
+      setRating(updatedGroup.my_rating ?? rating);
+      Alert.alert('Rating saved', `Your rating for ${updatedGroup.name} has been saved.`);
+    } catch (submitError) {
+      const message = submitError instanceof Error ? submitError.message : 'Please try again.';
+      Alert.alert(
+        message.includes('Complete at least one study session')
+          ? 'Study session required'
+          : 'Could not save rating',
+        message
+      );
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const selectedBuddy = reviewableBuddies.find((buddy) => buddy.id === selectedBuddyId);
   const buddyName = selectedBuddyName ?? selectedBuddy?.name ?? 'your study buddy';
   const buddyPhoto = chosenBuddyId ? chosenBuddyPhoto : selectedBuddy?.profile_photo_url ?? routeReviewUserPhoto;
+  const selectedGroup = groupDetails?.id === chosenGroupId
+    ? groupDetails
+    : groups.find((group) => group.id === chosenGroupId);
 
   return (
     <View style={styles.frame}>
@@ -123,22 +211,29 @@ export default function ReviewsScreen({ navigation, route }: any) {
           style={styles.backButton}
           onPress={handleBack}
           accessibilityRole="button"
-          accessibilityLabel={chosenBuddyId ? 'Back to buddy reviews' : 'Go back'}
+          accessibilityLabel={chosenBuddyId || chosenGroupId ? 'Back to reviews list' : 'Go back'}
         >
           <Ionicons name="arrow-back" size={19} color={colors.teal} />
-          <Text style={styles.backButtonText}>{chosenBuddyId ? 'All reviews' : 'Back'}</Text>
+          <Text style={styles.backButtonText}>{chosenBuddyId || chosenGroupId ? 'All reviews' : 'Back'}</Text>
         </TouchableOpacity>
         <AppHeader
-          title={selectedBuddyId ? 'Rate your buddy' : 'Buddy reviews'}
-          subtitle={selectedBuddyId ? buddyName : 'Ratings and feedback'}
+          title={selectedBuddyId ? 'Rate your buddy' : chosenGroupId ? 'Rate a group' : 'Reviews'}
+          subtitle={selectedBuddyId ? buddyName : chosenGroupId ? selectedGroup?.name ?? 'Group rating' : 'Ratings and feedback'}
           navigation={navigation}
         />
         {loading ? <ActivityIndicator style={styles.loading} color="#1a5f7a" /> : error ? (
           <View style={styles.errorCard}>
             <View style={styles.errorIcon}><Ionicons name="cloud-offline-outline" size={24} color="#b91c1c" /></View>
-            <Text style={styles.sectionTitle}>Couldn’t load reviews</Text>
+            <Text style={styles.sectionTitle}>{chosenGroupId ? 'Couldn’t load this group' : 'Couldn’t load reviews'}</Text>
             <Text style={styles.body}>{error}</Text>
-            <TouchableOpacity style={styles.retryButton} onPress={() => { setLoading(true); void load(); }} accessibilityRole="button">
+            <TouchableOpacity
+              style={styles.retryButton}
+              onPress={() => {
+                if (chosenGroupId) void loadGroupForRating(chosenGroupId);
+                else { setLoading(true); void load(); }
+              }}
+              accessibilityRole="button"
+            >
               <Text style={styles.retryText}>Try again</Text>
             </TouchableOpacity>
           </View>
@@ -286,6 +381,78 @@ export default function ReviewsScreen({ navigation, route }: any) {
               )}
             </View>
           </>
+        ) : chosenGroupId && selectedGroup ? (
+          <>
+            <View style={styles.groupProfile}>
+              <View style={styles.groupAvatar}>
+                <Ionicons name="people-circle-outline" size={27} color="#15803d" />
+              </View>
+              <View style={styles.buddyProfileCopy}>
+                <Text style={styles.buddyProfileName}>{selectedGroup.name}</Text>
+                <Text style={styles.body}>{selectedGroup.course || 'Study group'}</Text>
+              </View>
+              <View style={styles.groupRatingSummary}>
+                <Text style={styles.groupRatingValue}>
+                  {selectedGroup.average_rating == null ? '—' : selectedGroup.average_rating.toFixed(1)}
+                </Text>
+                <Text style={styles.groupRatingCaption}>
+                  {selectedGroup.ratings_count
+                    ? `${selectedGroup.ratings_count} ${selectedGroup.ratings_count === 1 ? 'rating' : 'ratings'}`
+                    : 'No ratings'}
+                </Text>
+              </View>
+            </View>
+            <View style={styles.card}>
+              <View style={styles.formHeading}>
+                <View style={styles.formIcon}><Ionicons name="star" size={20} color="#d97706" /></View>
+                <View style={styles.formHeadingCopy}>
+                  <Text style={styles.sectionTitle}>{selectedGroup.my_rating ? 'Update your rating' : 'Rate this group'}</Text>
+                  <Text style={styles.body}>How has your experience been with {selectedGroup.name}?</Text>
+                </View>
+              </View>
+              <View style={styles.stars} accessibilityRole="radiogroup" accessibilityLabel="Group rating">
+                {[1, 2, 3, 4, 5].map((value) => (
+                  <TouchableOpacity
+                    key={value}
+                    style={[styles.starButton, value <= rating && styles.starButtonActive]}
+                    onPress={() => setRating(value)}
+                    accessibilityRole="radio"
+                    accessibilityState={{ selected: rating === value }}
+                    accessibilityLabel={`${value} out of 5, ${ratingLabels[value - 1]}`}
+                  >
+                    <Ionicons name={value <= rating ? 'star' : 'star-outline'} size={28} color={value <= rating ? '#d97706' : '#cbd5e1'} />
+                  </TouchableOpacity>
+                ))}
+              </View>
+              <View style={styles.ratingHintRow}>
+                <Text style={styles.ratingHint}>Tap a star to rate</Text>
+                {rating > 0 ? <Text style={styles.ratingLabel}>{ratingLabels[rating - 1]}</Text> : null}
+              </View>
+              <Text style={styles.fieldLabel}>Optional comment</Text>
+              <TextInput
+                value={comment}
+                onChangeText={setComment}
+                placeholder="Share a few words about your experience with this group"
+                placeholderTextColor="#94a3b8"
+                style={styles.input}
+                multiline
+                maxLength={2000}
+                textAlignVertical="top"
+                accessibilityLabel="Optional group rating comment"
+              />
+              <Text style={styles.characterCount}>{comment.length} / 2000</Text>
+              <TouchableOpacity
+                style={[styles.submit, (submitting || rating === 0) && styles.disabled]}
+                disabled={submitting || rating === 0}
+                onPress={() => { void handleSubmitGroupRating(); }}
+                accessibilityRole="button"
+              >
+                <Ionicons name="checkmark-circle-outline" size={19} color="#fff" />
+                <Text style={styles.submitText}>{submitting ? 'Saving…' : 'Save group rating'}</Text>
+              </TouchableOpacity>
+              <Text style={styles.privacyHint}>A completed group study session is required to submit a rating.</Text>
+            </View>
+          </>
         ) : (
           <>
             <View style={styles.summary}>
@@ -313,8 +480,8 @@ export default function ReviewsScreen({ navigation, route }: any) {
             <View style={styles.card}>
               <View style={styles.sectionHeading}>
                 <View>
-                  <Text style={styles.sectionTitle}>Rate a study buddy</Text>
-                  <Text style={styles.sectionSubtitle}>Choose someone you’re connected with</Text>
+                  <Text style={styles.sectionTitle}>Rate a study buddy or group</Text>
+                  <Text style={styles.sectionSubtitle}>Select a buddy or one of your groups to leave a rating.</Text>
                 </View>
                 <View style={styles.sectionIcon}><Ionicons name="people-outline" size={19} color="#1a5f7a" /></View>
               </View>
@@ -355,6 +522,36 @@ export default function ReviewsScreen({ navigation, route }: any) {
                 <View style={styles.emptyInline}>
                   <Ionicons name="people-outline" size={23} color="#94a3b8" />
                   <Text style={styles.body}>Connect with a study buddy to leave an overall rating.</Text>
+                </View>
+              )}
+              <View style={styles.groupListHeading}>
+                <Text style={styles.sectionTitle}>Study groups</Text>
+                <View style={styles.countPill}><Text style={styles.countText}>{groups.length}</Text></View>
+              </View>
+              {groups.length ? groups.map((group) => (
+                <TouchableOpacity
+                  key={group.id}
+                  style={styles.buddyOption}
+                  onPress={() => selectGroup(group)}
+                  accessibilityRole="button"
+                  accessibilityLabel={`${group.my_rating ? 'Edit rating for' : 'Rate'} study group ${group.name}`}
+                >
+                  <View style={styles.groupAvatar}>
+                    <Ionicons name="people-circle-outline" size={23} color="#15803d" />
+                  </View>
+                  <View style={styles.buddyCopy}>
+                    <Text style={styles.cardTitle}>{group.name}</Text>
+                    <Text style={styles.body}>{group.course || 'Study group'}</Text>
+                  </View>
+                  <View style={styles.rateAction}>
+                    <Text style={styles.rateActionText}>{group.my_rating ? 'Edit rating' : 'Rate group'}</Text>
+                    <Ionicons name="chevron-forward" size={15} color="#1a5f7a" />
+                  </View>
+                </TouchableOpacity>
+              )) : (
+                <View style={styles.emptyInline}>
+                  <Ionicons name="people-circle-outline" size={23} color="#94a3b8" />
+                  <Text style={styles.body}>Join a study group to rate its study sessions.</Text>
                 </View>
               )}
             </View>
@@ -453,6 +650,12 @@ const styles = StyleSheet.create({
   buddyProfileInitials: { color: colors.teal, fontSize: 17, fontWeight: '800' },
   buddyProfileCopy: { flex: 1, gap: 3 },
   buddyProfileName: { color: colors.navy, fontSize: 16, fontWeight: '800' },
+  groupProfile: { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: '#fff', padding: 14, borderRadius: 12, borderWidth: 1, borderColor: colors.border },
+  groupAvatar: { width: 42, height: 42, borderRadius: 14, backgroundColor: '#dcfce7', alignItems: 'center', justifyContent: 'center' },
+  groupRatingSummary: { alignItems: 'flex-end', gap: 2 },
+  groupRatingValue: { color: colors.navy, fontSize: 18, fontWeight: '800' },
+  groupRatingCaption: { color: '#64748b', fontSize: 10, fontWeight: '700' },
+  groupListHeading: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingTop: 12 },
   summaryScore: {
     minWidth: 82,
     alignItems: 'center',

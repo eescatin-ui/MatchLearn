@@ -16,6 +16,11 @@ import * as ImagePicker from 'expo-image-picker';
 import appConfig from '../../app.json';
 import { useAuth } from '../context/AuthContext';
 import { profileApi, StudyCourseInput, StudyMode } from '../services/api/profile';
+import {
+  BlockedUserSummary,
+  fetchBlockedUsers,
+  unblockUser,
+} from '../services/api/buddies';
 import { AcademicCatalog, fetchAcademicCatalog } from '../services/api/courses';
 import AppHeader from '../components/AppHeader';
 import { Ionicons } from '@expo/vector-icons';
@@ -235,6 +240,9 @@ export default function ProfileScreen({
   const [settingsVisible, setSettingsVisible] = useState(false);
   const [settingsInfoSection, setSettingsInfoSection] = useState<SettingsInfoSection>(null);
   const [isDeletingAccount, setIsDeletingAccount] = useState(false);
+  const [blockedUsers, setBlockedUsers] = useState<BlockedUserSummary[]>([]);
+  const [loadingBlockedUsers, setLoadingBlockedUsers] = useState(false);
+  const [unblockingUserId, setUnblockingUserId] = useState<number | null>(null);
   const profileScrollRef = useRef<ScrollView | null>(null);
   const [pickerField, setPickerField] = useState<keyof typeof defaultProfile | null>(null);
   const [catalog, setCatalog] = useState<AcademicCatalog>({
@@ -257,6 +265,52 @@ export default function ProfileScreen({
   const [courseDraft, setCourseDraft] = useState('');
   const [availabilityDays, setAvailabilityDays] = useState<string[]>([]);
   const [savedFormSnapshot, setSavedFormSnapshot] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!settingsVisible) return;
+    let active = true;
+    fetchBlockedUsers()
+      .then((users) => {
+        if (active) setBlockedUsers(users);
+      })
+      .catch((error) => {
+        if (active) {
+          Alert.alert(
+            'Could not load blocked users',
+            error instanceof Error ? error.message : 'Please try again.'
+          );
+        }
+      })
+      .finally(() => {
+        if (active) setLoadingBlockedUsers(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [settingsVisible]);
+
+  const handleUnblockUser = (blockedUser: BlockedUserSummary) => {
+    Alert.alert('Unblock user?', `${blockedUser.name} may appear in recommendations again.`, [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Unblock',
+        onPress: () => {
+          void (async () => {
+            try {
+              setUnblockingUserId(blockedUser.user_id);
+              await unblockUser(blockedUser.user_id);
+              setBlockedUsers((current) => current.filter((userItem) => userItem.user_id !== blockedUser.user_id));
+            } catch (error) {
+              Alert.alert('Could not unblock user', error instanceof Error ? error.message : 'Please try again.');
+            } finally {
+              setUnblockingUserId(null);
+            }
+          })();
+        },
+      },
+    ]);
+  };
   const institution = user?.email?.toLowerCase().endsWith('@ssct.edu.ph') ? 'SSCT' : 'SNSU';
   const campusDepartments = catalog.departments.filter((department) =>
     !excludedDepartments.has(department.name)
@@ -294,6 +348,8 @@ export default function ProfileScreen({
       || !tags.academicStrengths.length
       || !tags.academicNeeds.length,
   };
+  const incompleteProfileSections = (['personal', 'academic', 'preferences'] as const)
+    .filter((section) => incompleteSections[section]);
   const shouldHighlightMissing = (section: ProfileSection, missing: boolean) =>
     onboardingActive && showRequiredErrors && activeSection === section && missing;
   const isSectionComplete = (section: ProfileSection) => !incompleteSections[section];
@@ -916,7 +972,10 @@ export default function ProfileScreen({
           title="Profile"
           subtitle="SNSU Main Campus · Matching information & credentials"
           navigation={navigation}
-          onSettingsPress={() => setSettingsVisible(true)}
+          onSettingsPress={() => {
+            setLoadingBlockedUsers(true);
+            setSettingsVisible(true);
+          }}
           showRatingCount={false}
         />
 
@@ -946,6 +1005,34 @@ export default function ProfileScreen({
           </View>
           <Ionicons name="sparkles-outline" size={20} color="#b9e4f0" />
         </View>
+
+        {profileCheckReady && !onboardingActive && incompleteProfileSections.length > 0 ? (
+          <View style={styles.profileGuidanceCard}>
+            <View style={styles.profileGuidanceIcon}>
+              <Ionicons name="sparkles-outline" size={18} color={colors.teal} />
+            </View>
+            <View style={styles.profileGuidanceCopy}>
+              <Text style={styles.profileGuidanceTitle}>Improve your study matches</Text>
+              <Text style={styles.profileGuidanceText}>
+                Add details in {incompleteProfileSections.map((section) => (
+                  section === 'personal' ? 'Profile' : section === 'academic' ? 'Academic' : 'Study Match'
+                )).join(', ')} to give recommendations more information.
+              </Text>
+              <TouchableOpacity
+                style={styles.profileGuidanceAction}
+                onPress={() => handleSectionPress(incompleteProfileSections[0])}
+                accessibilityRole="button"
+              >
+                <Text style={styles.profileGuidanceActionText}>
+                  Complete {incompleteProfileSections[0] === 'personal'
+                    ? 'Profile'
+                    : incompleteProfileSections[0] === 'academic' ? 'Academic information' : 'Study Match'}
+                </Text>
+                <Ionicons name="arrow-forward" size={14} color={colors.teal} />
+              </TouchableOpacity>
+            </View>
+          </View>
+        ) : null}
 
         <View style={styles.sectionTabs}>
           {([
@@ -1430,7 +1517,7 @@ export default function ProfileScreen({
                 <View style={styles.settingsInfoCard}>
                   <Ionicons name="shield-checkmark-outline" size={19} color={colors.teal} />
                   <Text style={styles.settingsInfoText}>
-                    Choose whether your phone number and address are visible when you edit your personal profile. Keep them private unless you want study buddies to see them.
+                    Blocking removes a user from matches, buddy connections, and direct conversations. Shared study-group spaces are not affected. Phone number and address visibility can be managed in your personal profile.
                   </Text>
                 </View>
                 <SettingsAction
@@ -1452,6 +1539,30 @@ export default function ProfileScreen({
                     navigation.navigate('Buddies');
                   }}
                 />
+                <View style={styles.blockedUsersSection}>
+                  <View style={styles.blockedUsersHeading}>
+                    <Text style={styles.blockedUsersTitle}>Blocked users</Text>
+                    {loadingBlockedUsers ? <ActivityIndicator size="small" color={colors.teal} /> : null}
+                  </View>
+                  {!loadingBlockedUsers && blockedUsers.length === 0 ? (
+                    <Text style={styles.settingsFootnote}>You have not blocked anyone.</Text>
+                  ) : null}
+                  {blockedUsers.map((blockedUser) => (
+                    <View key={blockedUser.user_id} style={styles.blockedUserRow}>
+                      <Text style={styles.blockedUserName}>{blockedUser.name}</Text>
+                      <TouchableOpacity
+                        onPress={() => handleUnblockUser(blockedUser)}
+                        disabled={unblockingUserId === blockedUser.user_id}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Unblock ${blockedUser.name}`}
+                      >
+                        <Text style={styles.unblockButtonText}>
+                          {unblockingUserId === blockedUser.user_id ? 'Unblocking…' : 'Unblock'}
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+                  ))}
+                </View>
                 <TouchableOpacity
                   style={styles.settingsTextAction}
                   onPress={() => setSettingsInfoSection('privacy')}
@@ -1597,6 +1708,13 @@ const styles = StyleSheet.create({
   profileHeroImage: { width: '100%', height: '100%' },
   profileHeroInitials: { color: colors.teal, fontSize: 18, fontWeight: '800' },
   profileHeroCopy: { flex: 1 },
+  profileGuidanceCard: { flexDirection: 'row', alignItems: 'flex-start', gap: 11, padding: 13, borderRadius: 13, borderWidth: 1, borderColor: '#c9e5eb', backgroundColor: '#f0f9fb', marginTop: 13 },
+  profileGuidanceIcon: { width: 34, height: 34, borderRadius: 11, alignItems: 'center', justifyContent: 'center', backgroundColor: '#dff1f4' },
+  profileGuidanceCopy: { flex: 1 },
+  profileGuidanceTitle: { color: colors.navy, fontSize: 13, fontWeight: '800' },
+  profileGuidanceText: { color: colors.muted, fontSize: 11, lineHeight: 16, marginTop: 3 },
+  profileGuidanceAction: { flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start', marginTop: 8 },
+  profileGuidanceActionText: { color: colors.teal, fontSize: 11, fontWeight: '800' },
   profileHeroEyebrow: { color: colors.teal, fontSize: 9, letterSpacing: 1, fontWeight: '800', marginBottom: 5 },
   profileHeroName: { color: colors.navy, fontSize: 17, fontWeight: '800' },
   profileHeroDetail: { color: colors.muted, fontSize: 11, marginTop: 3 },
@@ -1981,6 +2099,12 @@ const styles = StyleSheet.create({
   settingsActionTitle: { color: '#0f172a', fontSize: 13, fontWeight: '700' },
   settingsActionDescription: { color: '#64748b', fontSize: 11, lineHeight: 15, marginTop: 2 },
   settingsFootnote: { color: '#64748b', fontSize: 11, lineHeight: 16, marginTop: 3, marginBottom: 8 },
+  blockedUsersSection: { borderTopWidth: 1, borderTopColor: '#e8edf3', paddingTop: 12, marginTop: 4 },
+  blockedUsersHeading: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  blockedUsersTitle: { color: '#334155', fontSize: 12, fontWeight: '700' },
+  blockedUserRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#f1f5f9' },
+  blockedUserName: { flex: 1, color: '#0f172a', fontSize: 13, marginRight: 12 },
+  unblockButtonText: { color: colors.teal, fontSize: 12, fontWeight: '700' },
   settingsInfoCard: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, backgroundColor: '#f0f9ff', borderRadius: 12, padding: 12, marginBottom: 4 },
   settingsInfoText: { flex: 1, color: '#475569', fontSize: 13, lineHeight: 20 },
   settingsTextAction: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 12 },

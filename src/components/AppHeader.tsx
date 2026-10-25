@@ -1,9 +1,9 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
 import { Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../context/AuthContext';
-import { fetchNotifications } from '../services/api/notifications';
+import { useNotificationBadge } from '../context/NotificationBadgeContext';
 import { getUserInitials } from '../utils/user';
 import { colors } from '../theme';
 import UserRatingBadge from './UserRatingBadge';
@@ -13,6 +13,8 @@ interface AppHeaderProps {
   subtitle?: string;
   navigation: any;
   onSettingsPress?: () => void;
+  onNotificationsPress?: () => void;
+  showBackButton?: boolean;
   showRatingCount?: boolean;
 }
 
@@ -21,28 +23,30 @@ export default function AppHeader({
   subtitle,
   navigation,
   onSettingsPress,
+  onNotificationsPress,
+  showBackButton = false,
   showRatingCount = true,
 }: AppHeaderProps) {
   const { user } = useAuth();
+  const { unreadCount, refreshUnreadCount } = useNotificationBadge();
   const initials = getUserInitials(user?.name || 'Student');
-  const [unreadCount, setUnreadCount] = useState(0);
 
   useFocusEffect(useCallback(() => {
-    let active = true;
-    fetchNotifications()
-      .then((feed) => {
-        if (active) setUnreadCount(feed.unreadCount);
-      })
-      .catch((error: unknown) => {
-        console.error('Failed to load unread notification count:', error);
-      });
-    return () => {
-      active = false;
-    };
-  }, []));
+    void refreshUnreadCount();
+  }, [refreshUnreadCount]));
 
   return (
     <View style={styles.container}>
+      {showBackButton ? (
+        <TouchableOpacity
+          style={styles.backButton}
+          onPress={() => navigation.goBack()}
+          accessibilityRole="button"
+          accessibilityLabel="Go back"
+        >
+          <Ionicons name="arrow-back" size={20} color={colors.teal} />
+        </TouchableOpacity>
+      ) : null}
       <View style={styles.titleContainer}>
         <Text style={styles.title}>{title}</Text>
         {subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
@@ -50,7 +54,7 @@ export default function AppHeader({
       <View style={styles.actions}>
         <TouchableOpacity
           style={styles.iconButton}
-          onPress={() => navigation.navigate('Home', { screen: 'Notifications' })}
+          onPress={onNotificationsPress ?? (() => navigation.navigate('Home', { screen: 'Notifications' }))}
           accessibilityRole="button"
           accessibilityLabel="Notifications"
         >
@@ -120,6 +124,7 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingRight: 12,
   },
+  backButton: { width: 34, height: 38, alignItems: 'flex-start', justifyContent: 'center' },
   title: {
     fontSize: 21,
     fontWeight: '800',

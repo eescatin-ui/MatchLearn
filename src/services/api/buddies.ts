@@ -10,6 +10,7 @@ export interface BuddyUserSummary {
 }
 
 export interface BuddyProfile extends BuddyUserSummary {
+  compatibility_score?: number | null;
   profile: {
     institution: string | null;
     gender: string | null;
@@ -40,6 +41,11 @@ export interface BuddyConnections {
   outgoing_requests: BuddyRequestSummary[];
 }
 
+export interface BlockedUserSummary {
+  user_id: number;
+  name: string;
+}
+
 interface BuddyConnectionsResponse {
   success: boolean;
   data?: BuddyConnections;
@@ -48,6 +54,11 @@ interface BuddyConnectionsResponse {
 interface BuddyProfileResponse {
   success: boolean;
   data?: { buddy?: BuddyProfile };
+}
+
+interface BlockedUsersResponse {
+  success: boolean;
+  data?: { blocked_users?: BlockedUserSummary[] };
 }
 
 export const fetchBuddyConnections = async (): Promise<BuddyConnections> => {
@@ -64,6 +75,21 @@ export const fetchBuddyProfile = async (userId: number): Promise<BuddyProfile> =
 
 export const removeBuddy = async (userId: number): Promise<void> => {
   await apiClient.delete(`/buddies/${userId}`);
+};
+
+export const fetchBlockedUsers = async (): Promise<BlockedUserSummary[]> => {
+  const response = await apiClient.get<BlockedUsersResponse>('/blocks');
+  const users = response.data?.data?.blocked_users;
+  if (!users) throw new Error('The server did not return your blocked users.');
+  return users;
+};
+
+export const blockUser = async (userId: number): Promise<void> => {
+  await apiClient.post('/blocks', { user_id: userId });
+};
+
+export const unblockUser = async (userId: number): Promise<void> => {
+  await apiClient.delete(`/blocks/${userId}`);
 };
 
 export type UserReportReason =

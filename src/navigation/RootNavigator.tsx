@@ -73,6 +73,7 @@ function DiscoverStack() {
     <Stack.Navigator screenOptions={{ headerShown: false }}>
       <Stack.Screen name="DiscoverTab" component={DiscoverScreen} />
       <Stack.Screen name="MatchDetail" component={MatchDetailScreen} />
+      <Stack.Screen name="BuddyGroupDetail" component={BuddiesDetailScreen} />
     </Stack.Navigator>
   );
 }

@@ -59,7 +59,10 @@ export interface GroupRecord {
   members?: number;
   role?: string;
   created_by?: number;
-  request_status?: 'pending' | null;
+  request_status?: 'pending' | 'invited' | null;
+  request_id?: number | null;
+  total_sessions?: number;
+  pending_invite_user_ids?: number[];
   join_requests?: GroupJoinRequest[];
   creator?: { id: number; name: string } | null;
   members_list?: GroupMember[];
@@ -118,6 +121,22 @@ export const discoverGroups = async (): Promise<GroupRecord[]> => {
 
 export const joinGroup = async (groupId: number): Promise<void> => {
   await apiClient.post(`/groups/${groupId}/join`);
+};
+
+export const cancelGroupJoinRequest = async (groupId: number): Promise<void> => {
+  await apiClient.delete(`/groups/${groupId}/join-requests`);
+};
+
+export const inviteBuddyToGroup = async (groupId: number, userId: number): Promise<void> => {
+  await apiClient.post(`/groups/${groupId}/invitations`, { user_id: userId });
+};
+
+export const respondToGroupInvitation = async (
+  groupId: number,
+  requestId: number,
+  action: 'accept' | 'decline'
+): Promise<void> => {
+  await apiClient.patch(`/groups/${groupId}/invitations/${requestId}`, { action });
 };
 
 export const fetchGroupDetails = async (groupId: number): Promise<GroupRecord> => {

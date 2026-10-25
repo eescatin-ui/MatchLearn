@@ -35,6 +35,7 @@ Google is used for both sign-in and account creation; MatchLearn does not requir
 New or incomplete profiles are guided through a three-step setup: personal information, academic information, and study match preferences. Save each step to continue. Required information is highlighted in red; while setup is incomplete, leaving the profile for another app section prompts you to return and finish. Required matching information includes a department, program, year level, preferred study time, study mode, study style, at least one available day, at least one strength, and at least one weakness. Courses are optional, but the course field stays highlighted until at least one is added. Follow the displayed `COURSE CODE - Course Name` format (for example, `IT 213 - Database Management Systems`). Personal information requires a full name. Phone number, address, gender, marital status, bio, and student ID are optional.
 
 After setup is complete, you can edit your profile at any time from the **Profile** tab.
+If an existing profile is missing required matching details, Profile shows a shortcut to the incomplete section.
 
 The profile has three sections:
 
@@ -68,9 +69,12 @@ When a student has ratings, their avatar in Discover, Buddies, study sessions, m
 3. Use the search box to find people by name, course, or skills, or groups by name, course, or schedule.
 4. Pull down to refresh recommendations if needed.
 
+The Discover header and search/sort controls stay pinned while you browse the results. Tap the information icon beside **Study buddy matches** to show or hide the compatibility explanation. A pending request appears above the match score on its card.
+
 ### View a study-buddy match
 
-Tap a person to view their available profile information, compatibility score, match reasons, and ratings.
+Tap a person to view their available profile information, compatibility score, match reasons, and ratings. An accepted buddy’s profile also shows their saved compatibility score when one is available.
+In the buddy view, sort recommendations by compatibility, shared-course count, or ratings. Use the match reasons to understand the recommendation; scores are guides, not guarantees.
 
 - Tap **Request to be study buddies** to send a connection request.
 - If the other person sent you a request, accept it from the match screen or from **Buddies → Requests**.
@@ -99,9 +103,11 @@ Open **Buddies** to switch among the available buddy, group, and request views. 
 
 - Tap **Create a study group** to set a group name and course, choose an icon and color, and select study preferences. A schedule can be added where available.
 - As a group administrator, review incoming join requests in **Buddies → Requests**, then accept or decline them.
-- Open a group to view its details and conversation. Group administrators can manage group details. Members can leave a group; if an administrator leaves a group with other members, the app asks them to choose a replacement administrator.
+- In Discover, tap any group card to view its details, even if you have not joined or requested to join. Nonmembers can request to join; pending requests can be cancelled from the card or details screen. A pending invitation can be accepted or declined from the details screen or Notifications.
+- Open a group to view its details, total confirmed/completed sessions, and conversation. Group administrators can manage group details and use **Invite** on the members card to choose a paired buddy. The invited buddy must accept or decline from **Notifications** before joining.
+- Members can leave a group; if an administrator leaves a group with other members, the app asks them to choose a replacement administrator.
 
-Use the report and safety options on a buddy’s detail page if you need to report a concern.
+Use the report option on a buddy’s detail page to report a concern. You can also block a user from a match or buddy profile. Blocking removes the buddy connection and direct conversation history, stops future matches and direct conversations, and removes pending requests. It does not affect shared study-group spaces. Manage or unblock accounts from **Profile → Settings → Blocked users**.
 
 ## 6. Plan study sessions
 
@@ -110,7 +116,9 @@ Use the report and safety options on a buddy’s detail page if you need to repo
 3. Enter a topic, start and end date/time, and location.
 4. Tap **Send invitation**. The other participant or group members may need to respond before the session is confirmed.
 
-Use the **All**, **On going**, **Pending**, **Completed**, and **Cancelled** filters to find sessions. Switch between list and calendar views. The calendar displays confirmed sessions; select a date to see its agenda.
+Use the **All**, **Upcoming**, **Pending**, **Declined**, **Completed**, and **Cancelled** filters to find sessions. Switch between list and calendar views. The calendar displays confirmed sessions; select a date to see its agenda. A confirmed session today is highlighted in red; one tomorrow is highlighted in yellow.
+
+Session times are entered in your device’s local time and shown to each participant in their own local time. MatchLearn checks pending and confirmed sessions for participant time conflicts when creating or rescheduling; overlapping sessions are rejected. Sessions that start at the same time another one ends are allowed.
 
 Session date colors show timing or completion:
 
@@ -133,16 +141,18 @@ The color is a quick visual guide; check the session’s status and date details
 3. Type your message in the box at the bottom and tap **Send**.
 
 Messages support text and clickable web links. The current app does not provide document, image, or other file attachments in chat. Only open links you trust.
+If sending fails, the draft stays in the composer. Tap **Retry** to safely try again without creating a duplicate message.
+Swipe a message to reply to it. Long-press a message to show its actions; you can edit or delete your own messages, or reply to another person’s message. Edited messages are marked **Edited**.
 
 ## 8. Notifications and reviews
 
 ### Notifications
 
-Open **Notifications** from the Home screen to review activity such as buddy requests, group requests, and study-session updates. Tap an unread item to mark it as read, or choose **Mark all as read**. Pull down to refresh.
+Open **Notifications** from the Home screen to review activity such as buddy requests, group requests, and study-session updates. Tap an item to open its related screen; unread items are marked as read. Choose **Select** or long-press a notification to select one or more items, then choose **Delete selected** to remove them. Choose **Mark all as read** to clear unread indicators, or pull down to refresh.
 
 ### Reviews
 
-Open **Reviews** from the Home screen or a buddy’s details to see ratings and feedback. You can rate a study buddy after completing at least one study session together. Select the buddy, choose an overall star rating, optionally add a comment, and submit. You can update your rating later.
+Open **Reviews** from the Home screen or a buddy’s details to see ratings and feedback. Select a buddy or a joined study group, choose an overall star rating, optionally add a comment, and submit. A completed study session with the buddy or group is required before rating. You can update your rating later.
 
 ## 9. Account and privacy
 
@@ -151,6 +161,7 @@ Open **Profile** and then **Settings** to access account and app controls. Use G
 ### Privacy and personal information
 
 Use the visibility options in the personal profile to decide whether your phone number and address are shown to other students. Avoid placing sensitive information in your bio or messages. For formal privacy questions or data requests, contact the app administrator or your institution.
+Review blocked accounts or unblock someone from **Profile → Settings → Blocked users**. Blocking does not remove that person from shared group conversations.
 
 ### Sign out or delete your account
 

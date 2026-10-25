@@ -21,6 +21,7 @@ import { colors } from '../theme';
 import GroupAvatar from '../components/GroupAvatar';
 import GroupPreferencePicker from '../components/GroupPreferencePicker';
 import {
+  blockUser,
   BuddyReport,
   BuddyProfile,
   fetchBuddyReport,
@@ -30,10 +31,13 @@ import {
   updateBuddyReport,
   UserReportReason,
   withdrawBuddyReport,
+  fetchBuddyConnections,
 } from '../services/api/buddies';
 import {
   deleteGroup,
+  cancelGroupJoinRequest,
   fetchGroupDetails,
+  joinGroup,
   GROUP_AVATAR_COLORS,
   GROUP_AVATAR_OPTIONS,
   GroupAvatarColor,
@@ -46,12 +50,15 @@ import {
   GROUP_STUDY_TIME_OPTIONS,
   GroupMember,
   GroupRecord,
+  inviteBuddyToGroup,
   leaveGroup,
   rateGroup,
+  respondToGroupInvitation,
   updateGroup,
 } from '../services/api/groups';
 import { startDirectConversation } from '../services/api/messages';
 import { fetchReviews } from '../services/api/reviews';
+import { getMatchScoreColors } from '../utils/matchScoreColors';
 
 type DetailRoute =
   | {
@@ -67,6 +74,7 @@ type DetailRoute =
       name: string;
       averageRating?: number | null;
       ratingsCount?: number;
+      source?: 'discover';
     };
 
 export default function BuddiesDetailScreen({ navigation, route }: any) {
@@ -97,6 +105,11 @@ export default function BuddiesDetailScreen({ navigation, route }: any) {
   const [editStudyStyle, setEditStudyStyle] = useState<GroupStudyStyle>('Visual');
   const [editPreferredStudyTime, setEditPreferredStudyTime] = useState<GroupStudyTime>('Flexible');
   const [editStudyMode, setEditStudyMode] = useState<GroupStudyMode>('either');
+  const [inviteVisible, setInviteVisible] = useState(false);
+  const [inviteBuddies, setInviteBuddies] = useState<Awaited<ReturnType<typeof fetchBuddyConnections>>['buddies']>([]);
+  const [loadingInviteBuddies, setLoadingInviteBuddies] = useState(false);
+  const [inviteLoadError, setInviteLoadError] = useState<string | null>(null);
+  const [invitingBuddyId, setInvitingBuddyId] = useState<number | null>(null);
   const isBuddy = detailRoute.kind === 'buddy';
 
   const loadDetails = useCallback(async (openRating = false) => {
@@ -157,6 +170,41 @@ export default function BuddiesDetailScreen({ navigation, route }: any) {
     }, [loadDetails, navigation, route.params?.openRating])
   );
 
+  const openInvitePicker = async () => {
+    if (!group) return;
+    setInviteVisible(true);
+    setLoadingInviteBuddies(true);
+    setInviteLoadError(null);
+    try {
+      const connections = await fetchBuddyConnections();
+      const memberIds = new Set((group.members_list ?? []).map((member) => member.id));
+      setInviteBuddies(connections.buddies.filter((candidate) => !memberIds.has(candidate.id)));
+    } catch (loadError) {
+      setInviteLoadError(loadError instanceof Error ? loadError.message : 'Could not load your paired buddies.');
+    } finally {
+      setLoadingInviteBuddies(false);
+    }
+  };
+
+  const sendGroupInvitation = async (userId: number, userName: string) => {
+    if (!group) return;
+    try {
+      setInvitingBuddyId(userId);
+      await inviteBuddyToGroup(group.id, userId);
+      setGroup((current) => current
+        ? {
+            ...current,
+            pending_invite_user_ids: [...new Set([...(current.pending_invite_user_ids ?? []), userId])],
+          }
+        : current);
+      Alert.alert('Invitation sent', `${userName} can accept or decline it from notifications.`);
+    } catch (inviteError) {
+      Alert.alert('Could not invite buddy', inviteError instanceof Error ? inviteError.message : 'Please try again.');
+    } finally {
+      setInvitingBuddyId(null);
+    }
+  };
+
   const openMessage = async () => {
     try {
       setBusy(true);
@@ -188,6 +236,36 @@ export default function BuddiesDetailScreen({ navigation, route }: any) {
     }
   };
 
+  const confirmBlockUser = () => {
+    if (!isBuddy) return;
+    const buddyName = buddy?.name ?? detailRoute.name;
+    Alert.alert(
+      `Block ${buddyName}?`,
+      'This removes the buddy connection, direct conversation history, and future matches. Shared study-group spaces are not affected.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Block',
+          style: 'destructive',
+          onPress: () => {
+            void (async () => {
+              try {
+                setBusy(true);
+                await blockUser(detailRoute.id);
+                Alert.alert('User blocked', `${buddyName} has been blocked.`);
+                navigation.goBack();
+              } catch (blockError) {
+                Alert.alert('Could not block user', blockError instanceof Error ? blockError.message : 'Please try again.');
+              } finally {
+                setBusy(false);
+              }
+            })();
+          },
+        },
+      ]
+    );
+  };
+
   const removeConnection = async (newAdminId?: number) => {
     try {
       setBusy(true);
@@ -211,6 +289,79 @@ export default function BuddiesDetailScreen({ navigation, route }: any) {
       navigation.goBack();
     } catch (removeError) {
       Alert.alert('Could not remove', removeError instanceof Error ? removeError.message : 'Please try again.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const cancelPendingGroupRequest = () => {
+    if (!group || group.request_status !== 'pending') return;
+    Alert.alert('Cancel join request?', `Your request to join ${group.name} will be cancelled.`, [
+      { text: 'Keep request', style: 'cancel' },
+      {
+        text: 'Cancel request',
+        style: 'destructive',
+        onPress: () => {
+          void (async () => {
+            try {
+              setBusy(true);
+              await cancelGroupJoinRequest(group.id);
+              setGroup((current) => current
+                ? { ...current, request_status: null, request_id: null }
+                : current);
+              Alert.alert('Request cancelled', `Your request to join ${group.name} was cancelled.`);
+            } catch (cancelError) {
+              Alert.alert(
+                'Could not cancel request',
+                cancelError instanceof Error ? cancelError.message : 'Please try again.'
+              );
+            } finally {
+              setBusy(false);
+            }
+          })();
+        },
+      },
+    ]);
+  };
+
+  const requestGroupMembership = async () => {
+    if (!group) return;
+    try {
+      setBusy(true);
+      await joinGroup(group.id);
+      setGroup((current) => current
+        ? { ...current, request_status: 'pending' }
+        : current);
+      Alert.alert('Request sent', `The admin of ${group.name} must approve your request to join.`);
+    } catch (requestError) {
+      Alert.alert('Could not request to join', requestError instanceof Error ? requestError.message : 'Please try again.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const respondToInvitationFromDetails = async (action: 'accept' | 'decline') => {
+    if (!group?.request_id) {
+      Alert.alert('Invitation unavailable', 'Refresh the group details and try again.');
+      return;
+    }
+    try {
+      setBusy(true);
+      await respondToGroupInvitation(group.id, group.request_id, action);
+      if (action === 'accept') {
+        await loadDetails();
+        Alert.alert('Invitation accepted', `You joined ${group.name}.`);
+      } else {
+        setGroup((current) => current
+          ? { ...current, request_status: null, request_id: null }
+          : current);
+        Alert.alert('Invitation declined', `You declined the invitation to ${group.name}.`);
+      }
+    } catch (responseError) {
+      Alert.alert(
+        action === 'accept' ? 'Could not accept invitation' : 'Could not decline invitation',
+        responseError instanceof Error ? responseError.message : 'Please try again.'
+      );
     } finally {
       setBusy(false);
     }
@@ -385,7 +536,7 @@ export default function BuddiesDetailScreen({ navigation, route }: any) {
       <ScrollView style={styles.content} contentContainerStyle={styles.contentInner}>
         <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()} accessibilityRole="button">
           <Ionicons name="chevron-back" size={20} color="#0d3b4f" />
-          <Text style={styles.backText}>My Buddies</Text>
+          <Text style={styles.backText}>{detailRoute.kind === 'group' && detailRoute.source === 'discover' ? 'Discover' : 'My Buddies'}</Text>
         </TouchableOpacity>
         <AppHeader
           title={isBuddy ? 'Buddy profile' : group?.name ?? detailRoute.name}
@@ -427,6 +578,19 @@ export default function BuddiesDetailScreen({ navigation, route }: any) {
                       <Ionicons name="checkmark-circle" size={15} color="#15803d" />
                       <Text style={styles.connectedText}>Buddy</Text>
                     </View>
+                    {buddy?.compatibility_score != null ? (
+                      <View
+                        style={[
+                          styles.matchScoreBadge,
+                          { backgroundColor: getMatchScoreColors(buddy.compatibility_score).backgroundColor },
+                        ]}
+                      >
+                        <Ionicons name="sparkles-outline" size={13} color={getMatchScoreColors(buddy.compatibility_score).color} />
+                        <Text style={[styles.matchScoreText, { color: getMatchScoreColors(buddy.compatibility_score).color }]}>
+                          {buddy.compatibility_score}% match
+                        </Text>
+                      </View>
+                    ) : null}
                   </View>
                 </View>
               </View>
@@ -493,6 +657,15 @@ export default function BuddiesDetailScreen({ navigation, route }: any) {
                 <Text style={[styles.reportButtonText, buddyReport && styles.reportedButtonText]}>
                   {buddyReport ? 'Reported' : 'Report this person'}
                 </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.blockUserButton}
+                onPress={confirmBlockUser}
+                disabled={busy}
+                accessibilityRole="button"
+              >
+                <Ionicons name="ban-outline" size={15} color="#b42318" />
+                <Text style={styles.blockUserButtonText}>Block this person</Text>
               </TouchableOpacity>
             </View>
             {profile ? (
@@ -600,6 +773,11 @@ export default function BuddiesDetailScreen({ navigation, route }: any) {
                 </View>
                 <View style={styles.groupMetricDivider} />
                 <View style={styles.groupMetric}>
+                  <Text style={styles.groupMetricValue}>{group.total_sessions ?? 0}</Text>
+                  <Text style={styles.groupMetricLabel}>Total sessions</Text>
+                </View>
+                <View style={styles.groupMetricDivider} />
+                <View style={styles.groupMetric}>
                   <Text style={styles.groupMetricValue}>
                     {group.average_rating == null ? '—' : group.average_rating.toFixed(1)}
                   </Text>
@@ -648,7 +826,21 @@ export default function BuddiesDetailScreen({ navigation, route }: any) {
             <View style={styles.card}>
               <View style={styles.groupSectionHeading}>
                 <SectionHeading icon="people-outline" title="Members" />
-                <Text style={styles.groupMemberCount}>{members.length}</Text>
+                <View style={styles.groupMemberActions}>
+                  {group.role?.toLowerCase() === 'admin' ? (
+                    <TouchableOpacity
+                      style={styles.inviteButton}
+                      onPress={() => { void openInvitePicker(); }}
+                      disabled={busy}
+                      accessibilityRole="button"
+                      accessibilityLabel="Invite a paired buddy to this group"
+                    >
+                      <Ionicons name="person-add-outline" size={15} color="#1a5f7a" />
+                      <Text style={styles.inviteButtonText}>Invite</Text>
+                    </TouchableOpacity>
+                  ) : null}
+                  <Text style={styles.groupMemberCount}>{members.length}</Text>
+                </View>
               </View>
               {members.map((member: GroupMember) => (
                 <View key={member.id} style={styles.memberRow}>
@@ -698,7 +890,7 @@ export default function BuddiesDetailScreen({ navigation, route }: any) {
             <View style={styles.removeBuddyAction}>
               <ActionButton label="Remove study buddy" icon="person-remove-outline" onPress={confirmRemove} disabled={busy} danger />
             </View>
-          ) : (
+          ) : group?.role ? (
             <View style={styles.actions}>
               <ActionButton label={busy ? 'Working…' : 'Message'} icon="chatbubble-outline" onPress={() => { void openMessage(); }} disabled={busy} />
               <ActionButton label="Rate" icon="star-outline" onPress={handleRate} disabled={busy} />
@@ -708,6 +900,43 @@ export default function BuddiesDetailScreen({ navigation, route }: any) {
                 onPress={confirmRemove}
                 disabled={busy}
                 danger
+              />
+            </View>
+          ) : group?.request_status === 'pending' ? (
+            <View style={styles.actions}>
+              <ActionButton
+                label={busy ? 'Cancelling…' : 'Cancel join request'}
+                icon="close-circle-outline"
+                onPress={cancelPendingGroupRequest}
+                disabled={busy}
+                danger
+              />
+            </View>
+          ) : group?.request_status === 'invited' ? (
+            <View style={styles.actions}>
+              <ActionButton
+                label={busy ? 'Working…' : 'Accept invitation'}
+                icon="checkmark-circle-outline"
+                onPress={() => { void respondToInvitationFromDetails('accept'); }}
+                disabled={busy}
+                primary
+              />
+              <ActionButton
+                label="Decline"
+                icon="close-circle-outline"
+                onPress={() => { void respondToInvitationFromDetails('decline'); }}
+                disabled={busy}
+                danger
+              />
+            </View>
+          ) : (
+            <View style={styles.actions}>
+              <ActionButton
+                label={busy ? 'Sending…' : 'Request to join'}
+                icon="person-add-outline"
+                onPress={() => { void requestGroupMembership(); }}
+                disabled={busy}
+                primary
               />
             </View>
           )
@@ -948,6 +1177,61 @@ export default function BuddiesDetailScreen({ navigation, route }: any) {
           </View>
         </KeyboardAvoidingView>
       </Modal>
+
+      <Modal visible={inviteVisible} transparent animationType="slide" onRequestClose={() => setInviteVisible(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>Invite a paired buddy</Text>
+            <Text style={styles.body}>Choose a study buddy to invite to {group?.name ?? 'this group'}.</Text>
+            {loadingInviteBuddies ? (
+              <ActivityIndicator color={colors.teal} style={styles.loading} />
+            ) : inviteLoadError ? (
+              <View style={styles.inviteEmpty}>
+                <Text style={styles.body}>{inviteLoadError}</Text>
+                <TouchableOpacity onPress={() => { void openInvitePicker(); }} accessibilityRole="button">
+                  <Text style={styles.retryText}>Try again</Text>
+                </TouchableOpacity>
+              </View>
+            ) : inviteBuddies.length ? (
+              <ScrollView style={styles.inviteList} keyboardShouldPersistTaps="handled">
+                {inviteBuddies.map((candidate) => {
+                  const alreadyInvited = group?.pending_invite_user_ids?.includes(candidate.id) ?? false;
+                  const sending = invitingBuddyId === candidate.id;
+                  return (
+                    <TouchableOpacity
+                      key={candidate.id}
+                      style={styles.inviteBuddyRow}
+                      onPress={() => { void sendGroupInvitation(candidate.id, candidate.name); }}
+                      disabled={alreadyInvited || invitingBuddyId !== null}
+                      accessibilityRole="button"
+                      accessibilityState={{ disabled: alreadyInvited || invitingBuddyId !== null }}
+                    >
+                      {candidate.profile_photo_url ? (
+                        <Image source={{ uri: candidate.profile_photo_url }} style={styles.memberAvatar} />
+                      ) : (
+                        <View style={[styles.memberAvatar, styles.memberAvatarFallback]}>
+                          <Text style={styles.memberAvatarText}>{candidate.name.slice(0, 2).toUpperCase()}</Text>
+                        </View>
+                      )}
+                      <Text style={styles.inviteBuddyName}>{candidate.name}</Text>
+                      <Text style={[styles.inviteActionText, alreadyInvited && styles.invitedText]}>
+                        {sending ? 'Sending…' : alreadyInvited ? 'Invited' : 'Invite'}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
+            ) : (
+              <View style={styles.inviteEmpty}>
+                <Text style={styles.body}>You have no paired buddies to invite who are not already members.</Text>
+              </View>
+            )}
+            <TouchableOpacity onPress={() => setInviteVisible(false)} disabled={invitingBuddyId !== null}>
+              <Text style={styles.cancelText}>Close</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -1054,6 +1338,8 @@ const styles = StyleSheet.create({
   yearBadgeText: { color: colors.teal, fontSize: 11, fontWeight: '700' },
   connectedBadge: { alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#f0fdf4', borderRadius: 10, paddingHorizontal: 8, paddingVertical: 5, marginTop: 1 },
   connectedText: { color: '#166534', fontSize: 10, fontWeight: '800' },
+  matchScoreBadge: { alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 4, borderRadius: 10, paddingHorizontal: 8, paddingVertical: 5, marginTop: 1 },
+  matchScoreText: { fontSize: 10, fontWeight: '800' },
   bioPanel: { flexDirection: 'row', alignItems: 'flex-start', gap: 9, backgroundColor: colors.page, borderRadius: 8, padding: 12 },
   bioText: { flex: 1, color: colors.text, fontSize: 13, lineHeight: 20 },
   buddyQuickActions: { flexDirection: 'row', gap: 9, marginTop: 1 },
@@ -1066,6 +1352,8 @@ const styles = StyleSheet.create({
   },
   reportButtonText: { color: '#b42318', fontSize: 12, fontWeight: '700' },
   reportedButtonText: { color: '#15803d' },
+  blockUserButton: { flexDirection: 'row', alignSelf: 'center', alignItems: 'center', gap: 5, paddingVertical: 7 },
+  blockUserButtonText: { color: '#b42318', fontSize: 12, fontWeight: '700' },
   sectionHeading: { flexDirection: 'row', alignItems: 'center', gap: 9, marginBottom: 1 },
   sectionIcon: { width: 34, height: 34, borderRadius: 12, backgroundColor: '#e8f1f5', alignItems: 'center', justifyContent: 'center' },
   chipList: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
@@ -1104,7 +1392,16 @@ const styles = StyleSheet.create({
   groupInfoValue: { color: colors.navy, fontSize: 12, fontWeight: '700', flexShrink: 1 },
   groupDescription: { color: colors.text, backgroundColor: '#f8fafc', borderRadius: 11, padding: 12, fontSize: 13, lineHeight: 20 },
   groupSectionHeading: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  groupMemberActions: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   groupMemberCount: { color: '#1a5f7a', backgroundColor: '#e8f1f5', overflow: 'hidden', borderRadius: 10, paddingHorizontal: 9, paddingVertical: 4, fontSize: 11, fontWeight: '800' },
+  inviteButton: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: '#e8f1f5', borderRadius: 9, paddingHorizontal: 10, paddingVertical: 7 },
+  inviteButtonText: { color: '#1a5f7a', fontSize: 11, fontWeight: '800' },
+  inviteList: { flexShrink: 1, maxHeight: 300 },
+  inviteBuddyRow: { flexDirection: 'row', alignItems: 'center', gap: 10, minHeight: 54, borderTopWidth: 1, borderTopColor: '#e2e8f0', paddingVertical: 8 },
+  inviteBuddyName: { flex: 1, color: '#334155', fontSize: 13, fontWeight: '700' },
+  inviteActionText: { color: '#1a5f7a', fontSize: 12, fontWeight: '800' },
+  invitedText: { color: '#64748b' },
+  inviteEmpty: { alignItems: 'center', paddingVertical: 18 },
   editButton: { flexDirection: 'row', alignSelf: 'flex-start', alignItems: 'center', gap: 6, backgroundColor: '#e8f1f5', borderRadius: 10, paddingHorizontal: 11, paddingVertical: 8 },
   editButtonText: { color: '#1a5f7a', fontSize: 12, fontWeight: '800' },
   cardTitle: { color: '#0f172a', fontSize: 15, fontWeight: '700' },

@@ -46,6 +46,12 @@ export interface MessageRecord {
   sender: 'me' | 'them';
   content: string;
   created_at: string;
+  edited_at?: string | null;
+  reply_to?: {
+    id: number;
+    user_name: string;
+    content: string;
+  } | null;
   user: {
     id: number;
     name: string;
@@ -63,12 +69,34 @@ export const fetchConversationMessages = async (chat: ConversationRecord): Promi
   return response.data?.data?.messages ?? [];
 };
 
-export const sendMessage = async (chat: ConversationRecord, content: string): Promise<void> => {
+export const sendMessage = async (
+  chat: ConversationRecord,
+  content: string,
+  clientMessageId: string,
+  replyToId?: number
+): Promise<void> => {
   if (chat.type === 'group') {
-    await apiClient.post('/messages', { group_id: chat.group_id ?? chat.id, content });
+    await apiClient.post('/messages', {
+      group_id: chat.group_id ?? chat.id,
+      content,
+      client_message_id: clientMessageId,
+      reply_to_id: replyToId,
+    });
     return;
   }
-  await apiClient.post(`/messages/direct-conversations/${chat.direct_conversation_id ?? chat.id}`, { content });
+  await apiClient.post(`/messages/direct-conversations/${chat.direct_conversation_id ?? chat.id}`, {
+    content,
+    client_message_id: clientMessageId,
+    reply_to_id: replyToId,
+  });
+};
+
+export const updateMessage = async (messageId: number, content: string): Promise<void> => {
+  await apiClient.patch(`/messages/${messageId}`, { content });
+};
+
+export const deleteMessage = async (messageId: number): Promise<void> => {
+  await apiClient.delete(`/messages/${messageId}`);
 };
 
 export const startDirectConversation = async (matchedUserId: number): Promise<ConversationRecord> => {

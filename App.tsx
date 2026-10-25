@@ -1,9 +1,9 @@
 import React from 'react';
 import { StatusBar } from 'expo-status-bar';
-import { PaperProvider } from 'react-native-paper';
-import { MD3LightTheme } from 'react-native-paper';
+import { MD3LightTheme, PaperProvider } from 'react-native-paper';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { AuthProvider } from './src/context/AuthContext';
+import { NotificationBadgeProvider } from './src/context/NotificationBadgeContext';
 import { AppAlertProvider } from './src/components/AppAlert';
 import { MutationLoadingOverlay } from './src/components/MutationLoadingOverlay';
 import RootNavigator from './src/navigation/RootNavigator';
@@ -25,7 +25,9 @@ export default function App() {
     <SafeAreaProvider>
       <PaperProvider theme={appTheme}>
         <AuthProvider>
-          <RootNavigator />
+          <NotificationBadgeProvider>
+            <RootNavigator />
+          </NotificationBadgeProvider>
           <AppAlertProvider />
           <MutationLoadingOverlay />
           <StatusBar style="auto" />

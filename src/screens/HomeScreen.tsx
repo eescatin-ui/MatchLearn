@@ -111,7 +111,15 @@ export default function HomeScreen({ navigation }: any) {
         </View>
 
         <View style={styles.statsGrid}>
-          <View style={[styles.statCard, styles.compactStatCard]}>
+          <TouchableOpacity
+            style={[styles.statCard, styles.compactStatCard]}
+            onPress={() => navigation.navigate('Buddies', {
+              screen: 'BuddiesTab',
+              params: { openBuddies: true },
+            })}
+            accessibilityRole="button"
+            accessibilityLabel={`View ${buddyCount} study ${buddyCount === 1 ? 'buddy' : 'buddies'}`}
+          >
             <View style={[styles.statCardTopline, styles.statCountTopline]}>
               <View style={[styles.statIcon, styles.buddyStatIcon]}>
                 <Ionicons name="people-outline" size={18} color="#0369a1" />
@@ -119,9 +127,17 @@ export default function HomeScreen({ navigation }: any) {
               <Text style={styles.statValue}>{buddyCount}</Text>
             </View>
             <Text style={styles.statLabel}>Buddies</Text>
-          </View>
+          </TouchableOpacity>
 
-          <View style={[styles.statCard, styles.compactStatCard]}>
+          <TouchableOpacity
+            style={[styles.statCard, styles.compactStatCard]}
+            onPress={() => navigation.navigate('Buddies', {
+              screen: 'BuddiesTab',
+              params: { openGroups: true },
+            })}
+            accessibilityRole="button"
+            accessibilityLabel={`View ${groups.length} study ${groups.length === 1 ? 'group' : 'groups'}`}
+          >
             <View style={[styles.statCardTopline, styles.statCountTopline]}>
               <View style={[styles.statIcon, styles.groupStatIcon]}>
                 <Ionicons name="people-circle-outline" size={19} color="#15803d" />
@@ -129,7 +145,7 @@ export default function HomeScreen({ navigation }: any) {
               <Text style={styles.statValue}>{groups.length}</Text>
             </View>
             <Text style={styles.statLabel}>Groups</Text>
-          </View>
+          </TouchableOpacity>
 
           <TouchableOpacity
             style={[styles.statCard, styles.compactStatCard, styles.rateButton]}

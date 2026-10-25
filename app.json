@@ -12,7 +12,7 @@
     },
     "android": {
       "package": "com.matchlearn.app",
-      "versionCode": 3,
+      "versionCode": 9,
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"

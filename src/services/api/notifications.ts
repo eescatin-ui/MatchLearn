@@ -38,3 +38,10 @@ export const markNotificationRead = async (id: number): Promise<void> => {
 export const markAllNotificationsRead = async (): Promise<void> => {
   await apiClient.patch('/notifications/read-all');
 };
+
+export const deleteNotifications = async (ids: number[]): Promise<number> => {
+  const response = await apiClient.delete<{ data?: { unread_count?: number } }>('/notifications', {
+    data: { ids },
+  });
+  return response.data.data?.unread_count ?? 0;
+};

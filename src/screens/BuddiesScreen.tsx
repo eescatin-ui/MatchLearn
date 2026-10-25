@@ -107,11 +107,27 @@ export default function BuddiesScreen({ navigation, route }: any) {
   }, []);
 
   useFocusEffect(useCallback(() => {
-    if (route?.params?.openGroupId) {
+    if (route?.params?.openGroupId || route?.params?.openGroups) {
       setTab('groups');
+    } else if (route?.params?.openRequests) {
+      setTab('requests');
+    } else if (route?.params?.openBuddyId || route?.params?.openBuddies) {
+      setTab('buddies');
     }
     void loadData();
-  }, [loadData, route?.params?.openGroupId]));
+  }, [
+    loadData,
+    route?.params?.openBuddies,
+    route?.params?.openBuddyId,
+    route?.params?.openGroupId,
+    route?.params?.openGroups,
+    route?.params?.openRequests,
+  ]));
+
+  useEffect(() => {
+    if (!route?.params?.openGroups && !route?.params?.openBuddies) return;
+    navigation.setParams({ openGroups: undefined, openBuddies: undefined });
+  }, [navigation, route?.params?.openBuddies, route?.params?.openGroups]);
 
   useEffect(() => {
     const openGroupId = route?.params?.openGroupId;
@@ -131,6 +147,28 @@ export default function BuddiesScreen({ navigation, route }: any) {
     }
     navigation.setParams({ openGroupId: undefined });
   }, [groups, loading, navigation, route?.params?.openGroupId]);
+
+  useEffect(() => {
+    const openBuddyId = route?.params?.openBuddyId;
+    if (!openBuddyId || loading) return;
+
+    const buddy = connections.buddies.find((item) => item.id === Number(openBuddyId));
+    if (buddy) {
+      navigation.navigate('BuddyGroupDetail', {
+        kind: 'buddy',
+        id: buddy.id,
+        name: buddy.name,
+        averageRating: buddy.average_rating,
+        ratingsCount: buddy.ratings_count,
+      });
+    }
+    navigation.setParams({ openBuddyId: undefined });
+  }, [connections.buddies, loading, navigation, route?.params?.openBuddyId]);
+
+  useEffect(() => {
+    if (!route?.params?.openRequests) return;
+    navigation.setParams({ openRequests: undefined });
+  }, [navigation, route?.params?.openRequests]);
 
   const handleRequestResponse = async (requestId: number, action: 'accept' | 'decline') => {
     try {

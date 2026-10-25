@@ -5,6 +5,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { MatchRecord } from '../../types/match';
 import { startDirectConversation } from '../../services/api/messages';
 import {
+  blockUser,
   fetchBuddyConnections,
   respondToBuddyRequest,
   sendBuddyRequest,
@@ -20,6 +21,7 @@ export default function MatchDetailScreen({ route, navigation }: any) {
   >('loading');
   const [requestId, setRequestId] = useState<number | null>(null);
   const [requestBusy, setRequestBusy] = useState(false);
+  const [blockingUser, setBlockingUser] = useState(false);
   const match: MatchRecord | undefined = route?.params?.match;
   const user = match?.matched_user;
 
@@ -92,6 +94,35 @@ export default function MatchDetailScreen({ route, navigation }: any) {
     } finally {
       setStartingChat(false);
     }
+  };
+
+  const handleBlockUser = () => {
+    if (!user) return;
+    Alert.alert(
+      `Block ${user.name}?`,
+      'They will no longer appear in your matches, buddy connections, or direct conversations. Your direct conversation history will be removed. Shared study-group spaces are not affected.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Block',
+          style: 'destructive',
+          onPress: () => {
+            void (async () => {
+              try {
+                setBlockingUser(true);
+                await blockUser(user.id);
+                Alert.alert('User blocked', `${user.name} has been blocked.`);
+                navigation.goBack();
+              } catch (error) {
+                Alert.alert('Could not block user', error instanceof Error ? error.message : 'Please try again.');
+              } finally {
+                setBlockingUser(false);
+              }
+            })();
+          },
+        },
+      ]
+    );
   };
 
   if (!match || !user) {
@@ -201,6 +232,16 @@ export default function MatchDetailScreen({ route, navigation }: any) {
             <Text style={styles.primaryButtonText}>{requestBusy ? 'Sending…' : 'Request to be study buddies'}</Text>
           </TouchableOpacity>
         )}
+
+        <TouchableOpacity
+          style={styles.blockButton}
+          onPress={handleBlockUser}
+          disabled={blockingUser}
+          accessibilityRole="button"
+        >
+          <Ionicons name="ban-outline" size={17} color="#b42318" />
+          <Text style={styles.blockButtonText}>{blockingUser ? 'Blocking…' : 'Block this user'}</Text>
+        </TouchableOpacity>
 
         {user.profile?.bio ? (
           <View style={styles.bioCard}>
@@ -364,6 +405,8 @@ const styles = StyleSheet.create({
   score: { fontSize: 16, fontWeight: '800' },
   primaryButton: { minHeight: 50, backgroundColor: '#1a5f7a', borderRadius: 15, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 9, paddingHorizontal: 14 },
   primaryButtonText: { color: '#fff', fontSize: 14, fontWeight: '800' },
+  blockButton: { minHeight: 44, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 10, borderRadius: 13, borderWidth: 1, borderColor: '#fecaca', backgroundColor: '#fff7f7' },
+  blockButtonText: { color: '#b42318', fontSize: 13, fontWeight: '700' },
   statusCard: { minHeight: 48, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 9, backgroundColor: '#e8f1f5', borderRadius: 15, paddingHorizontal: 14, paddingVertical: 12 },
   statusInfo: { color: '#1a5f7a', fontSize: 13, fontWeight: '700' },
   bioCard: { flexDirection: 'row', alignItems: 'flex-start', gap: 11, backgroundColor: '#fff', borderWidth: 1, borderColor: colors.border, borderRadius: 12, padding: 15 },

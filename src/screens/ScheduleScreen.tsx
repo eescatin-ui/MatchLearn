@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Image,
@@ -33,7 +33,7 @@ import { colors } from '../theme';
 
 type DateTimePickerTarget = 'startDate' | 'startTime' | 'endDate' | 'endTime';
 type SessionViewMode = 'list' | 'calendar';
-type SessionStatusFilter = 'all' | 'ongoing' | 'pending' | 'completed' | 'cancelled';
+type SessionStatusFilter = 'all' | 'upcoming' | 'pending' | 'declined' | 'completed' | 'cancelled';
 
 function SessionTargetAvatar({ session, size = 36 }: { session: StudySessionRecord; size?: number }) {
   if (session.target_type === 'group') {
@@ -120,6 +120,20 @@ const formatTime = (date: Date) => date.toLocaleTimeString(undefined, {
   hour12: true,
 });
 
+const getSessionStatusLabel = (session: StudySessionRecord, now: Date | null) => {
+  if (session.is_past) return 'Past';
+  if (session.status === 'pending') return 'Awaiting response';
+  if (session.status !== 'confirmed') {
+    return session.status.charAt(0).toUpperCase() + session.status.slice(1);
+  }
+
+  if (!now) return 'Confirmed · upcoming';
+  const startsAt = new Date(session.starts_at);
+  const endsAt = session.ends_at ? new Date(session.ends_at) : startsAt;
+  if (startsAt <= now && endsAt > now) return 'In progress';
+  return 'Confirmed · upcoming';
+};
+
 const setDatePart = (current: Date, selected: Date) => {
   const next = new Date(current);
   next.setFullYear(selected.getFullYear(), selected.getMonth(), selected.getDate());
@@ -146,12 +160,15 @@ const sortSessions = (sessions: StudySessionRecord[]) => [...sessions].sort((a, 
   || a.id - b.id
 ));
 
-export default function ScheduleScreen({ navigation }: any) {
+export default function ScheduleScreen({ navigation, route }: any) {
   const { user } = useAuth();
+  const scheduleScrollRef = useRef<ScrollView | null>(null);
   const [sessions, setSessions] = useState<StudySessionRecord[]>([]);
+  const [highlightedSessionId, setHighlightedSessionId] = useState<number | null>(null);
   const [buddies, setBuddies] = useState<BuddyUserSummary[]>([]);
   const [groups, setGroups] = useState<GroupRecord[]>([]);
   const [loading, setLoading] = useState(true);
+  const [currentTime, setCurrentTime] = useState<Date | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<SessionViewMode>('list');
   const [statusFilter, setStatusFilter] = useState<SessionStatusFilter>('all');
@@ -198,6 +215,33 @@ export default function ScheduleScreen({ navigation }: any) {
   useFocusEffect(useCallback(() => {
     void load();
   }, [load]));
+
+  useEffect(() => {
+    const updateCurrentTime = () => setCurrentTime(new Date());
+    updateCurrentTime();
+    const interval = setInterval(updateCurrentTime, 60_000);
+    return () => clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
+    const sessionId = Number(route?.params?.openSessionId);
+    if (!Number.isInteger(sessionId) || sessionId <= 0) return;
+
+    let clearHighlight: ReturnType<typeof setTimeout> | undefined;
+    const focusSession = setTimeout(() => {
+      setStatusFilter('all');
+      setViewMode('list');
+      setHighlightedSessionId(sessionId);
+      scheduleScrollRef.current?.scrollTo({ y: 0, animated: true });
+      navigation.setParams({ openSessionId: undefined });
+      clearHighlight = setTimeout(() => setHighlightedSessionId(null), 4000);
+    }, 0);
+
+    return () => {
+      clearTimeout(focusSession);
+      if (clearHighlight) clearTimeout(clearHighlight);
+    };
+  }, [navigation, route?.params?.openSessionId]);
 
   const openDateTimePicker = (target: DateTimePickerTarget) => {
     const current = target.startsWith('start') ? startsAt : endsAt;
@@ -349,18 +393,33 @@ export default function ScheduleScreen({ navigation }: any) {
     ]);
   };
 
-  const ongoingCount = sessions.filter((session) => session.status === 'confirmed' && !session.is_past).length;
+  const upcomingCount = sessions.filter((session) => session.status === 'confirmed' && !session.is_past).length;
   const pendingCount = sessions.filter((session) => session.status === 'pending' && !session.is_past).length;
+  const declinedCount = sessions.filter((session) => session.status === 'declined').length;
   const completedCount = sessions.filter((session) => session.status === 'completed').length;
   const cancelledCount = sessions.filter((session) => session.status === 'cancelled').length;
+  const nextConfirmedSession = sessions
+    .filter((session) => session.status === 'confirmed' && !session.is_past)
+    .sort((first, second) => first.starts_at.localeCompare(second.starts_at))[0];
+  const nextSessionStartsAt = nextConfirmedSession ? new Date(nextConfirmedSession.starts_at) : null;
+  const reminderDay = currentTime && nextSessionStartsAt
+    ? getLocalDateKey(nextSessionStartsAt) === getLocalDateKey(currentTime)
+      ? 'today'
+      : (() => {
+        const tomorrow = new Date(currentTime);
+        tomorrow.setDate(tomorrow.getDate() + 1);
+        return getLocalDateKey(nextSessionStartsAt) === getLocalDateKey(tomorrow) ? 'tomorrow' : null;
+      })()
+    : null;
   const filteredSessions = statusFilter === 'all'
     ? [
         ...sessions.filter((session) => session.status !== 'cancelled'),
         ...sessions.filter((session) => session.status === 'cancelled'),
       ]
     : sessions.filter((session) => {
-        if (statusFilter === 'ongoing') return session.status === 'confirmed' && !session.is_past;
+        if (statusFilter === 'upcoming') return session.status === 'confirmed' && !session.is_past;
         if (statusFilter === 'pending') return session.status === 'pending' && !session.is_past;
+        if (statusFilter === 'declined') return session.status === 'declined';
         if (statusFilter === 'completed') return session.status === 'completed';
         return session.status === 'cancelled';
       });
@@ -372,7 +431,7 @@ export default function ScheduleScreen({ navigation }: any) {
 
   return (
     <View style={styles.frame}>
-      <ScrollView style={styles.content} contentContainerStyle={styles.contentInner}>
+      <ScrollView ref={scheduleScrollRef} style={styles.content} contentContainerStyle={styles.contentInner}>
         <AppHeader title="Study Sessions" subtitle="Plan and track sessions with matched buddies" navigation={navigation} />
         <View style={styles.heroCard}>
           <View style={styles.heroCopy}>
@@ -391,6 +450,39 @@ export default function ScheduleScreen({ navigation }: any) {
           </TouchableOpacity>
         </View>
 
+        {reminderDay && nextConfirmedSession && nextSessionStartsAt ? (
+          <View
+            style={[
+              styles.reminderCard,
+              reminderDay === 'today' ? styles.reminderToday : styles.reminderTomorrow,
+            ]}
+            accessibilityLiveRegion="polite"
+          >
+            <View style={[
+              styles.reminderIcon,
+              reminderDay === 'today' ? styles.reminderTodayIcon : styles.reminderTomorrowIcon,
+            ]}>
+              <Ionicons
+                name={reminderDay === 'today' ? 'alarm-outline' : 'calendar-outline'}
+                size={20}
+                color={reminderDay === 'today' ? '#b42318' : '#92400e'}
+              />
+            </View>
+            <View style={styles.reminderCopy}>
+              <Text style={[
+                styles.reminderTitle,
+                reminderDay === 'today' ? styles.reminderTodayTitle : styles.reminderTomorrowTitle,
+              ]}>
+                {reminderDay === 'today' ? 'You have a session today' : 'Upcoming session tomorrow'}
+              </Text>
+              <Text style={styles.reminderText}>
+                {nextConfirmedSession.topic} · {formatDate(nextSessionStartsAt)} at {formatTime(nextSessionStartsAt)}
+              </Text>
+              <Text style={styles.reminderTimezone}>Times are shown in your device&apos;s local time.</Text>
+            </View>
+          </View>
+        ) : null}
+
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
@@ -398,8 +490,9 @@ export default function ScheduleScreen({ navigation }: any) {
         >
           {([
             { key: 'all', label: 'All', count: sessions.length },
-            { key: 'ongoing', label: 'On going', count: ongoingCount },
+            { key: 'upcoming', label: 'Upcoming', count: upcomingCount },
             { key: 'pending', label: 'Pending', count: pendingCount },
+            { key: 'declined', label: 'Declined', count: declinedCount },
             { key: 'completed', label: 'Completed', count: completedCount },
             { key: 'cancelled', label: 'Cancelled', count: cancelledCount },
           ] as const).map((filter) => {
@@ -511,7 +604,7 @@ export default function ScheduleScreen({ navigation }: any) {
                           {new Date(session.starts_at).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit', hour12: true })}
                         </Text>
                         <Text style={styles.agendaStatus}>
-                          {session.is_past ? 'Past' : session.status === 'confirmed' ? 'On going' : session.status}
+                          {getSessionStatusLabel(session, currentTime)}
                         </Text>
                       </View>
                       <Text style={styles.cardTitle}>{session.topic}</Text>
@@ -565,7 +658,11 @@ export default function ScheduleScreen({ navigation }: any) {
                   : null}
               </Text>
             )}
-            <View style={[styles.card, index === filteredSessions.length - 1 && styles.cardLast]}>
+            <View style={[
+              styles.card,
+              index === filteredSessions.length - 1 && styles.cardLast,
+              session.id === highlightedSessionId && styles.highlightedSessionCard,
+            ]}>
               <View style={styles.sessionMain}>
                 <View style={[styles.dateTile, { backgroundColor: dateToneColors.background }]}>
                   <Text style={[styles.dateMonth, { color: dateToneColors.foreground }]}>{startDate.toLocaleDateString(undefined, { month: 'short' }).toUpperCase()}</Text>
@@ -597,7 +694,7 @@ export default function ScheduleScreen({ navigation }: any) {
                           session.is_past && styles.pastStatusText,
                         ]}
                       >
-                        {session.is_past ? 'Past' : session.status === 'confirmed' ? 'On going' : session.status}
+                        {getSessionStatusLabel(session, currentTime)}
                       </Text>
                     </View>
                   </View>
@@ -781,6 +878,7 @@ export default function ScheduleScreen({ navigation }: any) {
               returnKeyType="next"
             />
             <Text style={styles.label}>Starts</Text>
+            <Text style={styles.timezoneNote}>Times use your device’s local time. Other participants see the session in their own local time.</Text>
             <View style={styles.dateTimeRow}>
               <DateTimeButton icon="calendar-outline" label={formatDate(startsAt)} onPress={() => openDateTimePicker('startDate')} />
               <DateTimeButton icon="time-outline" label={formatTime(startsAt)} onPress={() => openDateTimePicker('startTime')} />
@@ -853,6 +951,18 @@ const styles = StyleSheet.create({
   heroEyebrow: { color: colors.teal, fontSize: 10, fontWeight: '800', letterSpacing: 1.4, marginBottom: 7 },
   heroTitle: { color: colors.navy, fontSize: 18, lineHeight: 23, fontWeight: '800', maxWidth: 280 },
   heroSubtitle: { color: colors.muted, fontSize: 12, lineHeight: 17, marginTop: 3 },
+  reminderCard: { flexDirection: 'row', alignItems: 'flex-start', gap: 11, borderWidth: 1, borderRadius: 11, padding: 13, marginBottom: 14 },
+  reminderToday: { backgroundColor: '#fff5f4', borderColor: '#fecaca' },
+  reminderTomorrow: { backgroundColor: '#fffbeb', borderColor: '#fde68a' },
+  reminderIcon: { width: 36, height: 36, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+  reminderTodayIcon: { backgroundColor: '#fee4e2' },
+  reminderTomorrowIcon: { backgroundColor: '#fef3c7' },
+  reminderCopy: { flex: 1, gap: 3 },
+  reminderTitle: { fontSize: 13, fontWeight: '800' },
+  reminderTodayTitle: { color: '#b42318' },
+  reminderTomorrowTitle: { color: '#92400e' },
+  reminderText: { color: '#92400e', fontSize: 12, lineHeight: 17 },
+  reminderTimezone: { color: '#a16207', fontSize: 10, lineHeight: 14 },
   createButton: {
     alignSelf: 'flex-start',
     minHeight: 36,
@@ -926,6 +1036,7 @@ const styles = StyleSheet.create({
   sessionList: { backgroundColor: colors.surface, borderRadius: 11, borderWidth: 1, borderColor: colors.border, overflow: 'hidden', marginBottom: 12 },
   card: { padding: 12, borderBottomWidth: 1, borderBottomColor: colors.border },
   cardLast: { borderBottomWidth: 0 },
+  highlightedSessionCard: { backgroundColor: '#fff7ed', borderLeftWidth: 4, borderLeftColor: '#f59e0b' },
   sessionMain: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   dateTile: { width: 54, minHeight: 68, borderRadius: 9, backgroundColor: colors.tealLight, alignItems: 'center', justifyContent: 'center', paddingVertical: 7 },
   dateMonth: { color: colors.teal, fontSize: 10, fontWeight: '800', letterSpacing: 0.8 },
@@ -973,6 +1084,7 @@ const styles = StyleSheet.create({
   modalContent: { padding: 20, gap: 10 },
   modalTitle: { fontSize: 20, fontWeight: '800', color: '#0d3b4f' },
   label: { color: '#475569', fontWeight: '700' },
+  timezoneNote: { color: '#64748b', fontSize: 11, lineHeight: 16, marginTop: -4, marginBottom: 8 },
   selectButton: {
     minHeight: 46,
     backgroundColor: '#f8fafc',
