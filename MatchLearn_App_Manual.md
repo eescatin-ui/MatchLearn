@@ -58,7 +58,7 @@ Use the bottom navigation bar to open the main areas:
 | **Buddies** | Manage accepted buddies, study groups, and incoming or sent requests. |
 | **Profile** | Edit your personal, academic, and study-match information and account settings. |
 
-Badges on tabs indicate new matches, pending session invitations, unread messages, or incoming buddy requests. A badge may clear when you open the corresponding area.
+The shared app header includes a notification bell and unread badge across the main screens. Opening notifications, marking them read, or deleting selected notifications updates the badge throughout the app. Badges on tabs also indicate new matches, pending session invitations, unread messages, or incoming buddy requests.
 
 When a student has ratings, their avatar in Discover, Buddies, study sessions, messages, and reviews shows a compact badge with their average score and number of ratings. Your own photos in **Profile** are not badged.
 
@@ -132,7 +132,7 @@ Session date colors show timing or completion:
 | Purple | Past |
 | Gray | Completed |
 
-The color is a quick visual guide; check the session’s status and date details before taking action. Available actions depend on your role and the session status. The creator can edit or delete a session; participants can respond to invitations and manage their own session list.
+The color is a quick visual guide; check the session’s status and date details before taking action. Available actions depend on your role and the session status. The creator can edit or delete an upcoming session, or reschedule a completed or cancelled session; rescheduling sends a new invitation that participants must respond to. Rescheduling a completed session removes its existing reviews, so eligible participants can submit new reviews after the rescheduled session is completed. Participants can respond to invitations and manage their own session list.
 
 ## 7. Send messages
 
@@ -148,7 +148,7 @@ Swipe a message to reply to it. Long-press a message to show its actions; you ca
 
 ### Notifications
 
-Open **Notifications** from the Home screen to review activity such as buddy requests, group requests, and study-session updates. Tap an item to open its related screen; unread items are marked as read. Choose **Select** or long-press a notification to select one or more items, then choose **Delete selected** to remove them. Choose **Mark all as read** to clear unread indicators, or pull down to refresh.
+Open **Notifications** from the Home screen to review activity such as buddy requests, group requests, study-session updates, and confirmations when you submit a report or block someone. The person whose account is reported or blocked also receives a notice; these notices do not identify who submitted the report or block. Tap an item to open its related screen; unread items are marked as read. Choose **Select** or long-press a notification to select one or more items, then choose **Delete selected** to remove them. Choose **Mark all as read** to clear unread indicators, or pull down to refresh.
 
 ### Reviews
 

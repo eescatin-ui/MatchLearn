@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
 import {
   Image,
@@ -17,6 +17,7 @@ import UserRatingBadge from '../components/UserRatingBadge';
 import { colors } from '../theme';
 
 export default function MessagesScreen({ navigation }: any) {
+  const messagesScrollRef = useRef<ScrollView | null>(null);
   const [query, setQuery] = useState('');
   const [chats, setChats] = useState<ConversationRecord[]>([]);
   const [loading, setLoading] = useState(true);
@@ -35,6 +36,8 @@ export default function MessagesScreen({ navigation }: any) {
   }, []);
 
   useFocusEffect(useCallback(() => {
+    setQuery('');
+    messagesScrollRef.current?.scrollTo({ y: 0, animated: false });
     void loadConversations();
   }, [loadConversations]));
 
@@ -62,7 +65,7 @@ export default function MessagesScreen({ navigation }: any) {
 
   return (
     <View style={styles.frame}>
-      <ScrollView style={styles.content} contentContainerStyle={styles.contentInner}>
+      <ScrollView ref={messagesScrollRef} style={styles.content} contentContainerStyle={styles.contentInner}>
         <AppHeader title="Messages" subtitle="Stay connected" navigation={navigation} />
 
         <View style={styles.heroCard}>
@@ -110,7 +113,7 @@ export default function MessagesScreen({ navigation }: any) {
                   {chat.type === 'direct' && chat.profile_photo_url ? (
                     <View style={styles.avatarWrap}>
                       <Image source={{ uri: chat.profile_photo_url }} style={styles.avatarCircle} />
-                      <UserRatingBadge averageRating={chat.average_rating} ratingsCount={chat.ratings_count} />
+                      <UserRatingBadge averageRating={chat.average_rating} ratingsCount={chat.ratings_count} compact />
                     </View>
                   ) : chat.type === 'group' ? (
                     <GroupAvatar icon={chat.avatar_icon} color={chat.avatar_color} size={48} style={styles.avatarCircle} />
@@ -120,7 +123,7 @@ export default function MessagesScreen({ navigation }: any) {
                         <Text style={styles.avatarTextSmall}>{chat.initials}</Text>
                       </View>
                       {chat.type === 'direct' ? (
-                        <UserRatingBadge averageRating={chat.average_rating} ratingsCount={chat.ratings_count} />
+                        <UserRatingBadge averageRating={chat.average_rating} ratingsCount={chat.ratings_count} compact />
                       ) : null}
                     </View>
                   )}

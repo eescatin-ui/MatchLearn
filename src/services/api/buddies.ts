@@ -10,7 +10,9 @@ export interface BuddyUserSummary {
 }
 
 export interface BuddyProfile extends BuddyUserSummary {
+  is_blocked?: boolean;
   compatibility_score?: number | null;
+  total_sessions?: number;
   profile: {
     institution: string | null;
     gender: string | null;
@@ -44,6 +46,10 @@ export interface BuddyConnections {
 export interface BlockedUserSummary {
   user_id: number;
   name: string;
+  program?: string | null;
+  profile_photo_url?: string | null;
+  average_rating?: number | null;
+  ratings_count?: number;
 }
 
 interface BuddyConnectionsResponse {

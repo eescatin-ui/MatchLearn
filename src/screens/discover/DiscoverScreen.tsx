@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Image,
@@ -25,6 +25,7 @@ import { matchesSearch } from '../../utils/search';
 import { colors } from '../../theme';
 
 export default function DiscoverScreen({ navigation, route }: any) {
+  const discoverScrollRef = useRef<ScrollView | null>(null);
   const [matches, setMatches] = useState<MatchRecord[]>([]);
   const [groups, setGroups] = useState<GroupRecord[]>([]);
   const [view, setView] = useState<'buddies' | 'groups'>('buddies');
@@ -83,6 +84,10 @@ export default function DiscoverScreen({ navigation, route }: any) {
   }, []);
 
   useFocusEffect(useCallback(() => {
+    setView('buddies');
+    setSearchQuery('');
+    setMatchSort('recommended');
+    discoverScrollRef.current?.scrollTo({ y: 0, animated: false });
     void loadData();
   }, [loadData]));
 
@@ -167,6 +172,7 @@ export default function DiscoverScreen({ navigation, route }: any) {
   return (
     <View style={styles.frame}>
       <ScrollView
+        ref={discoverScrollRef}
         style={styles.content}
         contentContainerStyle={styles.contentInner}
         stickyHeaderIndices={[0]}

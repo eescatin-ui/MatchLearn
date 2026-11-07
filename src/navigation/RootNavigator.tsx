@@ -184,6 +184,7 @@ function AppStack() {
     <Tab.Navigator
       screenOptions={({ route }) => ({
         headerShown: false,
+        popToTopOnBlur: true,
         tabBarActiveTintColor: colors.teal,
         tabBarInactiveTintColor: colors.muted,
         tabBarStyle: {

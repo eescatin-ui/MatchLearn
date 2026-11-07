@@ -282,6 +282,7 @@ export default function ChatScreen({ navigation, route }: any) {
                       <UserRatingBadge
                         averageRating={message.user?.average_rating ?? conversation.average_rating}
                         ratingsCount={message.user?.ratings_count ?? conversation.ratings_count}
+                        compact
                       />
                     </View>
                   ) : (
@@ -294,6 +295,7 @@ export default function ChatScreen({ navigation, route }: any) {
                       <UserRatingBadge
                         averageRating={message.user?.average_rating ?? conversation.average_rating}
                         ratingsCount={message.user?.ratings_count ?? conversation.ratings_count}
+                        compact
                       />
                     </View>
                   )
@@ -437,7 +439,7 @@ const styles = StyleSheet.create({
   messageAvatar: { width: 30, height: 30, borderRadius: 11 },
   messageAvatarFallback: { backgroundColor: colors.teal, alignItems: 'center', justifyContent: 'center' },
   messageAvatarText: { color: '#fff', fontSize: 10, fontWeight: '800' },
-  messageBubble: { maxWidth: '80%', borderRadius: 18, paddingHorizontal: 14, paddingVertical: 10 },
+  messageBubble: { minWidth: 72, maxWidth: '80%', borderRadius: 18, paddingHorizontal: 14, paddingVertical: 10 },
   messageContentWrap: { maxWidth: '84%' },
   messageMine: { backgroundColor: colors.teal },
   messageThem: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border },

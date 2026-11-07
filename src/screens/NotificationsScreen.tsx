@@ -41,6 +41,10 @@ const notificationIcons: Record<string, string> = {
   session_declined: '↩',
   session_today: '⏰',
   session_tomorrow: '📅',
+  report_submitted: '🚩',
+  account_reported: '⚠️',
+  user_blocked: '🚫',
+  blocked_by_user: '🚫',
 };
 
 const formatNotificationTime = (value: string): string => {

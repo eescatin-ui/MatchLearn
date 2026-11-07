@@ -29,6 +29,7 @@ import {
   removeBuddy,
   reportBuddy,
   updateBuddyReport,
+  unblockUser,
   UserReportReason,
   withdrawBuddyReport,
   fetchBuddyConnections,
@@ -67,6 +68,7 @@ type DetailRoute =
       name: string;
       averageRating?: number | null;
       ratingsCount?: number;
+      isBlocked?: boolean;
     }
   | {
       kind: 'group';
@@ -111,26 +113,29 @@ export default function BuddiesDetailScreen({ navigation, route }: any) {
   const [inviteLoadError, setInviteLoadError] = useState<string | null>(null);
   const [invitingBuddyId, setInvitingBuddyId] = useState<number | null>(null);
   const isBuddy = detailRoute.kind === 'buddy';
+  const isBlockedBuddy = isBuddy && detailRoute.isBlocked === true;
 
   const loadDetails = useCallback(async (openRating = false) => {
     try {
       if (isBuddy) {
-        const [nextBuddy, nextReport, buddyReviews] = await Promise.all([
-          fetchBuddyProfile(detailRoute.id),
-          fetchBuddyReport(detailRoute.id),
-          fetchReviews(detailRoute.id),
-        ]);
+        const nextBuddy = await fetchBuddyProfile(detailRoute.id);
+        const [nextReport, buddyReviews] = isBlockedBuddy
+          ? [null, null]
+          : await Promise.all([
+              fetchBuddyReport(detailRoute.id),
+              fetchReviews(detailRoute.id),
+            ]);
         setBuddy({
           ...nextBuddy,
-          average_rating: buddyReviews.averageRating
+          average_rating: buddyReviews?.averageRating
             ?? detailRoute.averageRating
             ?? nextBuddy.average_rating,
-          ratings_count: buddyReviews.ratingsCount
+          ratings_count: buddyReviews?.ratingsCount
             || detailRoute.ratingsCount
             || nextBuddy.ratings_count,
         });
         setBuddyReport(nextReport);
-        setHasRatedBuddy(buddyReviews.myReview !== null);
+        setHasRatedBuddy(Boolean(buddyReviews && buddyReviews.myReview !== null));
       } else {
         const nextGroup = await fetchGroupDetails(detailRoute.id);
         const groupWithRatingFallback = {
@@ -159,6 +164,7 @@ export default function BuddiesDetailScreen({ navigation, route }: any) {
     detailRoute.averageRating,
     detailRoute.id,
     detailRoute.ratingsCount,
+    isBlockedBuddy,
     isBuddy,
   ]);
 
@@ -237,7 +243,7 @@ export default function BuddiesDetailScreen({ navigation, route }: any) {
   };
 
   const confirmBlockUser = () => {
-    if (!isBuddy) return;
+    if (!isBuddy || isBlockedBuddy) return;
     const buddyName = buddy?.name ?? detailRoute.name;
     Alert.alert(
       `Block ${buddyName}?`,
@@ -256,6 +262,33 @@ export default function BuddiesDetailScreen({ navigation, route }: any) {
                 navigation.goBack();
               } catch (blockError) {
                 Alert.alert('Could not block user', blockError instanceof Error ? blockError.message : 'Please try again.');
+              } finally {
+                setBusy(false);
+              }
+            })();
+          },
+        },
+      ]
+    );
+  };
+
+  const confirmUnblockUser = () => {
+    Alert.alert(
+      `Unblock ${buddy?.name ?? detailRoute.name}?`,
+      'They will no longer appear in your blocked list. This will not restore the previous buddy connection.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Unblock',
+          onPress: () => {
+            void (async () => {
+              try {
+                setBusy(true);
+                await unblockUser(detailRoute.id);
+                Alert.alert('User unblocked', `${buddy?.name ?? detailRoute.name} has been unblocked.`);
+                navigation.goBack();
+              } catch (unblockError) {
+                Alert.alert('Could not unblock user', unblockError instanceof Error ? unblockError.message : 'Please try again.');
               } finally {
                 setBusy(false);
               }
@@ -540,7 +573,7 @@ export default function BuddiesDetailScreen({ navigation, route }: any) {
         </TouchableOpacity>
         <AppHeader
           title={isBuddy ? 'Buddy profile' : group?.name ?? detailRoute.name}
-          subtitle={isBuddy ? 'Profile and study preferences' : 'Study group details'}
+          subtitle={isBlockedBuddy ? 'This person is blocked' : isBuddy ? 'Profile and study preferences' : 'Study group details'}
           navigation={navigation}
         />
 
@@ -575,8 +608,14 @@ export default function BuddiesDetailScreen({ navigation, route }: any) {
                       </View>
                     ) : null}
                     <View style={styles.connectedBadge}>
-                      <Ionicons name="checkmark-circle" size={15} color="#15803d" />
-                      <Text style={styles.connectedText}>Buddy</Text>
+                      <Ionicons
+                        name={isBlockedBuddy ? 'ban' : 'checkmark-circle'}
+                        size={15}
+                        color={isBlockedBuddy ? '#b42318' : '#15803d'}
+                      />
+                      <Text style={[styles.connectedText, isBlockedBuddy && styles.blockedText]}>
+                        {isBlockedBuddy ? 'Blocked' : 'Buddy'}
+                      </Text>
                     </View>
                     {buddy?.compatibility_score != null ? (
                       <View
@@ -616,57 +655,76 @@ export default function BuddiesDetailScreen({ navigation, route }: any) {
                     : `${buddy.average_rating.toFixed(1)} / 5 · ${buddy.ratings_count} ${buddy.ratings_count === 1 ? 'rating' : 'ratings'}`}
                 </Text>
               </View>
+              <View style={styles.buddySessionMetric}>
+                <Ionicons name="calendar-outline" size={16} color="#1a5f7a" />
+                <Text style={styles.buddySessionMetricValue}>{buddy?.total_sessions ?? 0}</Text>
+                <Text style={styles.buddySessionMetricLabel}>Total sessions</Text>
+              </View>
               {profile?.bio ? (
                 <View style={styles.bioPanel}>
                   <Ionicons name="chatbox-ellipses-outline" size={17} color="#1a5f7a" />
                   <Text style={styles.bioText}>{profile.bio}</Text>
                 </View>
               ) : null}
-              <View style={styles.buddyQuickActions}>
-                <ActionButton
-                  label={busy ? 'Working…' : 'Message'}
-                  icon="chatbubble-outline"
-                  onPress={() => { void openMessage(); }}
+              {isBlockedBuddy ? (
+                <TouchableOpacity
+                  style={[styles.unblockUserButton, busy && styles.disabled]}
+                  onPress={confirmUnblockUser}
                   disabled={busy}
-                  primary
-                />
-                <ActionButton
-                  label={hasRatedBuddy ? 'Rated' : 'Rate'}
-                  icon={hasRatedBuddy ? 'checkmark-circle-outline' : 'star-outline'}
-                  onPress={handleRate}
-                  disabled={busy}
-                />
-              </View>
-              <TouchableOpacity
-                style={styles.reportButton}
-                onPress={() => {
-                  setReportReasons(buddyReport?.reasons ?? []);
-                  setReportDetails(buddyReport?.details ?? '');
-                  setReportVisible(true);
-                }}
-                accessibilityRole="button"
-                accessibilityLabel={buddyReport
-                  ? `View your report for ${buddy?.name ?? detailRoute.name}`
-                  : `Report ${buddy?.name ?? detailRoute.name}`}
-              >
-                <Ionicons
-                  name={buddyReport ? 'checkmark-circle-outline' : 'flag-outline'}
-                  size={14}
-                  color={buddyReport ? '#15803d' : '#b42318'}
-                />
-                <Text style={[styles.reportButtonText, buddyReport && styles.reportedButtonText]}>
-                  {buddyReport ? 'Reported' : 'Report this person'}
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.blockUserButton}
-                onPress={confirmBlockUser}
-                disabled={busy}
-                accessibilityRole="button"
-              >
-                <Ionicons name="ban-outline" size={15} color="#b42318" />
-                <Text style={styles.blockUserButtonText}>Block this person</Text>
-              </TouchableOpacity>
+                  accessibilityRole="button"
+                >
+                  <Ionicons name="lock-open-outline" size={16} color="#b42318" />
+                  <Text style={styles.blockUserButtonText}>{busy ? 'Working…' : 'Unblock this person'}</Text>
+                </TouchableOpacity>
+              ) : (
+                <>
+                  <View style={styles.buddyQuickActions}>
+                    <ActionButton
+                      label={busy ? 'Working…' : 'Message'}
+                      icon="chatbubble-outline"
+                      onPress={() => { void openMessage(); }}
+                      disabled={busy}
+                      primary
+                    />
+                    <ActionButton
+                      label={hasRatedBuddy ? 'Rated' : 'Rate'}
+                      icon={hasRatedBuddy ? 'checkmark-circle-outline' : 'star-outline'}
+                      onPress={handleRate}
+                      disabled={busy}
+                    />
+                  </View>
+                  <TouchableOpacity
+                    style={styles.reportButton}
+                    onPress={() => {
+                      setReportReasons(buddyReport?.reasons ?? []);
+                      setReportDetails(buddyReport?.details ?? '');
+                      setReportVisible(true);
+                    }}
+                    accessibilityRole="button"
+                    accessibilityLabel={buddyReport
+                      ? `View your report for ${buddy?.name ?? detailRoute.name}`
+                      : `Report ${buddy?.name ?? detailRoute.name}`}
+                  >
+                    <Ionicons
+                      name={buddyReport ? 'checkmark-circle-outline' : 'flag-outline'}
+                      size={14}
+                      color={buddyReport ? '#15803d' : '#b42318'}
+                    />
+                    <Text style={[styles.reportButtonText, buddyReport && styles.reportedButtonText]}>
+                      {buddyReport ? 'Reported' : 'Report this person'}
+                    </Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.blockUserButton}
+                    onPress={confirmBlockUser}
+                    disabled={busy}
+                    accessibilityRole="button"
+                  >
+                    <Ionicons name="ban-outline" size={15} color="#b42318" />
+                    <Text style={styles.blockUserButtonText}>Block this person</Text>
+                  </TouchableOpacity>
+                </>
+              )}
             </View>
             {profile ? (
               <View style={styles.card}>
@@ -1002,8 +1060,16 @@ export default function BuddiesDetailScreen({ navigation, route }: any) {
       </Modal>
 
       <Modal visible={reportVisible} transparent animationType="slide" onRequestClose={() => setReportVisible(false)}>
-        <View style={styles.modalOverlay}>
-          <ScrollView contentContainerStyle={styles.editModalScroll} keyboardShouldPersistTaps="handled">
+        <KeyboardAvoidingView
+          style={styles.modalOverlay}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        >
+          <ScrollView
+            style={styles.editFieldsScroll}
+            contentContainerStyle={styles.editModalScroll}
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
+          >
             <View style={styles.modalCard}>
               <View style={styles.reportModalHeading}>
                 <View style={styles.reportModalIcon}>
@@ -1082,7 +1148,7 @@ export default function BuddiesDetailScreen({ navigation, route }: any) {
               </TouchableOpacity>
             </View>
           </ScrollView>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       <Modal visible={editVisible} transparent animationType="slide" onRequestClose={() => setEditVisible(false)}>
@@ -1328,6 +1394,9 @@ const styles = StyleSheet.create({
   avatar: { width: 72, height: 72, borderRadius: 16, backgroundColor: colors.tealLight, alignItems: 'center', justifyContent: 'center' },
   avatarText: { color: colors.teal, fontSize: 23, fontWeight: '800' },
   ratingSummary: { alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: '#fffbeb', borderRadius: 10, paddingHorizontal: 10, paddingVertical: 7 },
+  buddySessionMetric: { alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 7, backgroundColor: '#e8f1f5', borderRadius: 10, paddingHorizontal: 10, paddingVertical: 7 },
+  buddySessionMetricValue: { color: '#0d3b4f', fontSize: 13, fontWeight: '800' },
+  buddySessionMetricLabel: { color: '#1a5f7a', fontSize: 12, fontWeight: '700' },
   ratingStars: { flexDirection: 'row', alignItems: 'center', gap: 2 },
   ratingSummaryText: { color: '#92400e', fontSize: 12, fontWeight: '700' },
   heroIdentity: { flex: 1, minWidth: 0, gap: 5 },
@@ -1338,6 +1407,7 @@ const styles = StyleSheet.create({
   yearBadgeText: { color: colors.teal, fontSize: 11, fontWeight: '700' },
   connectedBadge: { alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#f0fdf4', borderRadius: 10, paddingHorizontal: 8, paddingVertical: 5, marginTop: 1 },
   connectedText: { color: '#166534', fontSize: 10, fontWeight: '800' },
+  blockedText: { color: '#b42318' },
   matchScoreBadge: { alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 4, borderRadius: 10, paddingHorizontal: 8, paddingVertical: 5, marginTop: 1 },
   matchScoreText: { fontSize: 10, fontWeight: '800' },
   bioPanel: { flexDirection: 'row', alignItems: 'flex-start', gap: 9, backgroundColor: colors.page, borderRadius: 8, padding: 12 },
@@ -1353,6 +1423,7 @@ const styles = StyleSheet.create({
   reportButtonText: { color: '#b42318', fontSize: 12, fontWeight: '700' },
   reportedButtonText: { color: '#15803d' },
   blockUserButton: { flexDirection: 'row', alignSelf: 'center', alignItems: 'center', gap: 5, paddingVertical: 7 },
+  unblockUserButton: { flexDirection: 'row', alignSelf: 'center', alignItems: 'center', gap: 7, borderRadius: 10, borderWidth: 1, borderColor: '#fecaca', backgroundColor: '#fff1f2', paddingHorizontal: 16, paddingVertical: 11 },
   blockUserButtonText: { color: '#b42318', fontSize: 12, fontWeight: '700' },
   sectionHeading: { flexDirection: 'row', alignItems: 'center', gap: 9, marginBottom: 1 },
   sectionIcon: { width: 34, height: 34, borderRadius: 12, backgroundColor: '#e8f1f5', alignItems: 'center', justifyContent: 'center' },

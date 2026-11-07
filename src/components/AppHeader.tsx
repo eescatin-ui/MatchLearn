@@ -25,7 +25,7 @@ export default function AppHeader({
   onSettingsPress,
   onNotificationsPress,
   showBackButton = false,
-  showRatingCount = true,
+  showRatingCount = false,
 }: AppHeaderProps) {
   const { user } = useAuth();
   const { unreadCount, refreshUnreadCount } = useNotificationBadge();

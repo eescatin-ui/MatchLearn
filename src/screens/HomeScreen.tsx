@@ -19,6 +19,7 @@ import { colors } from '../theme';
 export default function HomeScreen({ navigation }: any) {
   const { user, logout } = useAuth();
   const profilePromptedForUser = useRef<number | null>(null);
+  const homeScrollRef = useRef<ScrollView | null>(null);
   const userName = user?.name || 'Student';
   const [matches, setMatches] = useState<MatchRecord[]>([]);
   const [groups, setGroups] = useState<GroupRecord[]>([]);
@@ -71,6 +72,7 @@ export default function HomeScreen({ navigation }: any) {
   }, [navigation, user?.id]);
 
   useFocusEffect(useCallback(() => {
+    homeScrollRef.current?.scrollTo({ y: 0, animated: false });
     let active = true;
     Promise.all([fetchMatches(), fetchGroups(), fetchBuddyConnections(), fetchReviews()])
       .then(([nextMatches, nextGroups, connections, reviews]) => {
@@ -90,7 +92,7 @@ export default function HomeScreen({ navigation }: any) {
 
   return (
     <View style={styles.frame}>
-      <ScrollView style={styles.content} contentContainerStyle={styles.contentInner}>
+      <ScrollView ref={homeScrollRef} style={styles.content} contentContainerStyle={styles.contentInner}>
         <AppHeader
           title="Dashboard"
           subtitle={`Welcome back, ${userName.split(' ')[0]}!`}

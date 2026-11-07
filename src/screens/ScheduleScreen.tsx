@@ -30,6 +30,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../context/AuthContext';
 import { useFocusEffect } from '@react-navigation/native';
 import { colors } from '../theme';
+import { getSessionDateTone, sessionDateToneColors } from '../utils/sessionDateTone';
 
 type DateTimePickerTarget = 'startDate' | 'startTime' | 'endDate' | 'endTime';
 type SessionViewMode = 'list' | 'calendar';
@@ -70,36 +71,6 @@ function SessionTargetAvatar({ session, size = 36 }: { session: StudySessionReco
 const getLocalDateKey = (date: Date) => (
   `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
 );
-
-type SessionDateTone = 'blue' | 'green' | 'yellow' | 'orange' | 'red' | 'purple' | 'gray';
-
-const sessionDateToneColors: Record<SessionDateTone, { background: string; foreground: string }> = {
-  blue: { background: '#dbeafe', foreground: '#1d4ed8' },
-  green: { background: '#dcfce7', foreground: '#15803d' },
-  yellow: { background: '#fef9c3', foreground: '#a16207' },
-  orange: { background: '#ffedd5', foreground: '#c2410c' },
-  red: { background: '#fee2e2', foreground: '#b91c1c' },
-  purple: { background: '#f3e8ff', foreground: '#7e22ce' },
-  gray: { background: '#f1f5f9', foreground: '#64748b' },
-};
-
-const getSessionDateTone = (session: StudySessionRecord, now = new Date()): SessionDateTone => {
-  if (session.status === 'completed') return 'gray';
-
-  const startsAt = new Date(session.starts_at);
-  const endsAt = session.ends_at ? new Date(session.ends_at) : startsAt;
-  if (session.is_past || endsAt.getTime() < now.getTime()) return 'purple';
-
-  const todayOrdinal = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
-  const sessionOrdinal = Date.UTC(startsAt.getFullYear(), startsAt.getMonth(), startsAt.getDate());
-  const daysUntil = Math.round((sessionOrdinal - todayOrdinal) / 86400000);
-
-  if (daysUntil <= 0) return 'red';
-  if (daysUntil <= 3) return 'orange';
-  if (daysUntil <= 7) return 'yellow';
-  if (daysUntil < 14) return 'green';
-  return 'blue';
-};
 
 const getDefaultStartTime = () => {
   const date = new Date();
@@ -176,7 +147,7 @@ export default function ScheduleScreen({ navigation, route }: any) {
     const today = new Date();
     return new Date(today.getFullYear(), today.getMonth(), 1);
   });
-  const [selectedCalendarDate, setSelectedCalendarDate] = useState(() => new Date());
+  const [selectedCalendarDate, setSelectedCalendarDate] = useState<Date | null>(() => new Date());
   const [showCreate, setShowCreate] = useState(false);
   const [editingSession, setEditingSession] = useState<StudySessionRecord | null>(null);
   const [participantId, setParticipantId] = useState<number | null>(null);
@@ -215,6 +186,15 @@ export default function ScheduleScreen({ navigation, route }: any) {
   useFocusEffect(useCallback(() => {
     void load();
   }, [load]));
+
+  useFocusEffect(useCallback(() => {
+    setViewMode('list');
+    setStatusFilter('all');
+    const today = new Date();
+    setCalendarMonth(new Date(today.getFullYear(), today.getMonth(), 1));
+    setSelectedCalendarDate(today);
+    scheduleScrollRef.current?.scrollTo({ y: 0, animated: false });
+  }, []));
 
   useEffect(() => {
     const updateCurrentTime = () => setCurrentTime(new Date());
@@ -393,6 +373,44 @@ export default function ScheduleScreen({ navigation, route }: any) {
     ]);
   };
 
+  const openSessionTarget = (session: StudySessionRecord) => {
+    if (session.target_type === 'group') {
+      if (session.study_group_id === null) {
+        Alert.alert('Could not open study group', 'This session is missing its group details.');
+        return;
+      }
+
+      navigation.navigate('Buddies', {
+        screen: 'BuddyGroupDetail',
+        params: {
+          kind: 'group',
+          id: session.study_group_id,
+          name: session.other_user_name,
+        },
+      });
+      return;
+    }
+
+    const buddyId = session.host_user_id === user?.id
+      ? session.participant_user_id
+      : session.host_user_id;
+    if (buddyId === null) {
+      Alert.alert('Could not open buddy profile', 'This session is missing its buddy details.');
+      return;
+    }
+
+    navigation.navigate('Buddies', {
+      screen: 'BuddyGroupDetail',
+      params: {
+        kind: 'buddy',
+        id: buddyId,
+        name: session.other_user_name,
+        averageRating: session.other_user_average_rating,
+        ratingsCount: session.other_user_ratings_count,
+      },
+    });
+  };
+
   const upcomingCount = sessions.filter((session) => session.status === 'confirmed' && !session.is_past).length;
   const pendingCount = sessions.filter((session) => session.status === 'pending' && !session.is_past).length;
   const declinedCount = sessions.filter((session) => session.status === 'declined').length;
@@ -423,11 +441,13 @@ export default function ScheduleScreen({ navigation, route }: any) {
         if (statusFilter === 'completed') return session.status === 'completed';
         return session.status === 'cancelled';
       });
-  const selectedDateKey = getLocalDateKey(selectedCalendarDate);
+  const selectedDateKey = selectedCalendarDate ? getLocalDateKey(selectedCalendarDate) : null;
   const calendarSessions = sessions.filter((session) => session.status === 'confirmed');
-  const sessionsForSelectedDate = calendarSessions.filter(
-    (session) => getLocalDateKey(new Date(session.starts_at)) === selectedDateKey
-  );
+  const sessionsForSelectedDate = selectedDateKey
+    ? calendarSessions.filter(
+        (session) => getLocalDateKey(new Date(session.starts_at)) === selectedDateKey
+      )
+    : [];
 
   return (
     <View style={styles.frame}>
@@ -562,12 +582,16 @@ export default function ScheduleScreen({ navigation, route }: any) {
             <View style={styles.agendaHeading}>
               <View>
                 <Text style={styles.listTitle}>
-                  {selectedCalendarDate.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}
+                  {selectedCalendarDate
+                    ? selectedCalendarDate.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })
+                    : 'Select a date'}
                 </Text>
                 <Text style={styles.listCount}>
-                  {sessionsForSelectedDate.length === 0
-                    ? 'No sessions scheduled'
-                    : `${sessionsForSelectedDate.length} session${sessionsForSelectedDate.length === 1 ? '' : 's'}`}
+                  {!selectedCalendarDate
+                    ? 'Tap a date to see its sessions'
+                    : sessionsForSelectedDate.length === 0
+                      ? 'No sessions scheduled'
+                      : `${sessionsForSelectedDate.length} session${sessionsForSelectedDate.length === 1 ? '' : 's'}`}
                 </Text>
               </View>
               <TouchableOpacity
@@ -587,9 +611,9 @@ export default function ScheduleScreen({ navigation, route }: any) {
                   <TouchableOpacity
                     key={session.id}
                     style={[styles.agendaCard, index === sessionsForSelectedDate.length - 1 && styles.agendaCardLast]}
-                    onPress={() => setViewMode('list')}
+                    onPress={() => openSessionTarget(session)}
                     accessibilityRole="button"
-                    accessibilityLabel={`View ${session.topic} in the session list`}
+                    accessibilityLabel={`View ${session.target_type === 'group' ? 'group' : 'buddy'} details for ${session.topic}`}
                   >
                     <View style={[
                       styles.agendaAccent,
@@ -663,7 +687,12 @@ export default function ScheduleScreen({ navigation, route }: any) {
               index === filteredSessions.length - 1 && styles.cardLast,
               session.id === highlightedSessionId && styles.highlightedSessionCard,
             ]}>
-              <View style={styles.sessionMain}>
+              <TouchableOpacity
+                style={styles.sessionMain}
+                onPress={() => openSessionTarget(session)}
+                accessibilityRole="button"
+                accessibilityLabel={`View ${session.target_type === 'group' ? 'group' : 'buddy'} details for ${session.topic}`}
+              >
                 <View style={[styles.dateTile, { backgroundColor: dateToneColors.background }]}>
                   <Text style={[styles.dateMonth, { color: dateToneColors.foreground }]}>{startDate.toLocaleDateString(undefined, { month: 'short' }).toUpperCase()}</Text>
                   <Text style={[styles.dateDay, { color: dateToneColors.foreground }]}>{startDate.getDate()}</Text>
@@ -712,7 +741,7 @@ export default function ScheduleScreen({ navigation, route }: any) {
                     </Text>
                   </View>
                 </View>
-              </View>
+              </TouchableOpacity>
               <View style={styles.locationLine}>
                 <Ionicons name="location-outline" size={15} color="#64748b" />
                 <Text style={styles.detailText} numberOfLines={2}>{session.location}</Text>
@@ -1015,9 +1044,7 @@ const styles = StyleSheet.create({
   scheduleCalendarDayText: { color: '#334155', fontSize: 12, fontWeight: '600', textAlign: 'center' },
   scheduleCalendarDayTextSelected: { color: '#fff', fontWeight: '800' },
   calendarEventBox: { flex: 1, minHeight: 0, borderRadius: 6, paddingHorizontal: 3, paddingVertical: 2, justifyContent: 'center' },
-  calendarEventBoxSelected: { backgroundColor: '#ffffff' },
   calendarEventText: { color: '#334155', fontSize: 8, lineHeight: 10, fontWeight: '700', textAlign: 'center' },
-  calendarEventTextSelected: { color: '#0d3b4f' },
   agendaHeading: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 },
   todayButton: { paddingHorizontal: 12, paddingVertical: 7, borderRadius: 10, backgroundColor: '#e8f1f5' },
   todayButtonText: { color: '#1a5f7a', fontSize: 12, fontWeight: '800' },
@@ -1178,10 +1205,10 @@ function ScheduleCalendar({
   onSelectDate,
 }: {
   month: Date;
-  selectedDate: Date;
+  selectedDate: Date | null;
   sessions: StudySessionRecord[];
   onChangeMonth: (month: Date) => void;
-  onSelectDate: (date: Date) => void;
+  onSelectDate: (date: Date | null) => void;
 }) {
   const year = month.getFullYear();
   const monthIndex = month.getMonth();
@@ -1195,14 +1222,11 @@ function ScheduleCalendar({
 
   const moveMonth = (amount: number) => {
     const nextMonth = new Date(year, monthIndex + amount, 1);
-    const nextDaysInMonth = new Date(nextMonth.getFullYear(), nextMonth.getMonth() + 1, 0).getDate();
-    const nextSelectedDate = new Date(
-      nextMonth.getFullYear(),
-      nextMonth.getMonth(),
-      Math.min(selectedDate.getDate(), nextDaysInMonth)
-    );
+    const today = new Date();
+    const targetMonthIsCurrentMonth = nextMonth.getFullYear() === today.getFullYear()
+      && nextMonth.getMonth() === today.getMonth();
     onChangeMonth(nextMonth);
-    onSelectDate(nextSelectedDate);
+    onSelectDate(targetMonthIsCurrentMonth ? today : null);
   };
 
   return (
@@ -1239,7 +1263,7 @@ function ScheduleCalendar({
           const dateSessions = sessions.filter(
             (session) => getLocalDateKey(new Date(session.starts_at)) === dateKey
           );
-          const isSelected = dateKey === getLocalDateKey(selectedDate);
+          const isSelected = selectedDate !== null && dateKey === getLocalDateKey(selectedDate);
           const isToday = dateKey === todayKey;
 
           return (
@@ -1259,12 +1283,10 @@ function ScheduleCalendar({
                 {dateSessions.length > 0 ? (
                   <View style={[
                     styles.calendarEventBox,
-                    isSelected
-                      ? styles.calendarEventBoxSelected
-                      : { backgroundColor: sessionDateToneColors[getSessionDateTone(dateSessions[0])].background },
+                    { backgroundColor: sessionDateToneColors[getSessionDateTone(dateSessions[0])].background },
                   ]}>
                     <Text
-                      style={[styles.calendarEventText, isSelected && styles.calendarEventTextSelected]}
+                      style={styles.calendarEventText}
                       numberOfLines={2}
                     >
                       {dateSessions[0].topic}

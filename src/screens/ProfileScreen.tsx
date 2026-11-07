@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { usePreventRemove } from '@react-navigation/native';
+import { useFocusEffect, usePreventRemove } from '@react-navigation/native';
 import {
   ActivityIndicator,
   Image,
@@ -266,6 +266,10 @@ export default function ProfileScreen({
   const [availabilityDays, setAvailabilityDays] = useState<string[]>([]);
   const [savedFormSnapshot, setSavedFormSnapshot] = useState<string | null>(null);
 
+  useFocusEffect(useCallback(() => {
+    profileScrollRef.current?.scrollTo({ y: 0, animated: false });
+  }, []));
+
   useEffect(() => {
     if (!settingsVisible) return;
     let active = true;
@@ -321,6 +325,17 @@ export default function ProfileScreen({
     ...catalog.strengths.map((item) => item.name),
     ...catalog.weaknesses.map((item) => item.name),
   ]);
+  const filteredTagSuggestions = tagPickerField
+    ? academicMatchSuggestions.filter((suggestion) => {
+      const otherField: ProfileTagField = tagPickerField === 'academicStrengths'
+        ? 'academicNeeds'
+        : 'academicStrengths';
+      const suggestionKey = suggestion.trim().toLowerCase();
+      return !tags[otherField].some(
+        (tag) => tag.trim().toLowerCase() === suggestionKey
+      ) && suggestionKey.includes(tagPickerSearch.trim().toLowerCase());
+    })
+    : [];
   const selectedDepartmentId = campusDepartments.find(
     (department) => department.name === profile.department
   )?.id;
@@ -417,19 +432,28 @@ export default function ProfileScreen({
               ? 'Evening'
               : response?.data?.availabilities?.length ? 'Morning' : '',
         };
-        const loadedTags = {
-          academicStrengths: [...new Set([
+        const loadedStrengths = [...new Set(
+          [
             ...(profileData.academic_strengths ?? []),
             ...(response?.data?.strength_ids ?? []).map(
               (id) => academicCatalog.strengths.find((item) => item.id === id)?.name
             ).filter((name): name is string => Boolean(name)),
-          ])],
-          academicNeeds: [...new Set([
-            ...(profileData.academic_needs ?? []),
-            ...(response?.data?.weakness_ids ?? []).map(
-              (id) => academicCatalog.weaknesses.find((item) => item.id === id)?.name
-            ).filter((name): name is string => Boolean(name)),
-          ])],
+          ].map((tag) => tag.trim()).filter(Boolean)
+        )];
+        const loadedStrengthKeys = new Set(
+          loadedStrengths.map((tag) => tag.trim().toLowerCase())
+        );
+        const loadedTags = {
+          academicStrengths: loadedStrengths,
+          academicNeeds: [...new Set(
+            [
+              ...(profileData.academic_needs ?? []),
+              ...(response?.data?.weakness_ids ?? []).map(
+                (id) => academicCatalog.weaknesses.find((item) => item.id === id)?.name
+              ).filter((name): name is string => Boolean(name)),
+            ].map((tag) => tag.trim()).filter(Boolean)
+          )]
+            .filter((tag) => !loadedStrengthKeys.has(tag.toLowerCase())),
         };
         const loadedCourses = (profileData.study_courses ?? []).map((course) => ({
           ...course,
@@ -588,8 +612,20 @@ export default function ProfileScreen({
     const tag = value.trim();
     if (!tag) return;
 
-    if (tags[field].some((existing) => existing.toLowerCase() === tag.toLowerCase())) {
+    const tagKey = tag.toLowerCase();
+    if (tags[field].some((existing) => existing.trim().toLowerCase() === tagKey)) {
       setTagDrafts((current) => ({ ...current, [field]: '' }));
+      return;
+    }
+
+    const otherField: ProfileTagField = field === 'academicStrengths'
+      ? 'academicNeeds'
+      : 'academicStrengths';
+    if (tags[otherField].some((existing) => existing.trim().toLowerCase() === tagKey)) {
+      Alert.alert(
+        'Topic already selected',
+        `This topic is already listed as a ${otherField === 'academicStrengths' ? 'strength' : 'weakness'}. Remove it there before adding it here.`
+      );
       return;
     }
 
@@ -604,12 +640,14 @@ export default function ProfileScreen({
 
   const toggleSuggestedTag = (field: ProfileTagField, suggestion: string) => {
     const alreadySelected = tags[field].some(
-      (tag) => tag.toLowerCase() === suggestion.toLowerCase()
+      (tag) => tag.trim().toLowerCase() === suggestion.trim().toLowerCase()
     );
     if (alreadySelected) {
       setTags((current) => ({
         ...current,
-        [field]: current[field].filter((tag) => tag.toLowerCase() !== suggestion.toLowerCase()),
+        [field]: current[field].filter(
+          (tag) => tag.trim().toLowerCase() !== suggestion.trim().toLowerCase()
+        ),
       }));
       return;
     }
@@ -674,6 +712,12 @@ export default function ProfileScreen({
       {shouldHighlightMissing('preferences', !tags[field].length)
         ? <Text style={styles.requiredFieldHint}>
           Add at least one {field === 'academicStrengths' ? 'strength' : 'weakness'} for study matching
+        </Text>
+        : null}
+      {tags[field].some((tag) => tags[field === 'academicStrengths' ? 'academicNeeds' : 'academicStrengths']
+        .some((otherTag) => otherTag.trim().toLowerCase() === tag.trim().toLowerCase()))
+        ? <Text style={styles.requiredFieldHint}>
+          Remove topics that are also selected in the other list.
         </Text>
         : null}
     </View>
@@ -1372,34 +1416,30 @@ export default function ProfileScreen({
               keyboardShouldPersistTaps="handled"
               showsVerticalScrollIndicator
             >
-              {tagPickerField && academicMatchSuggestions
-                .filter((suggestion) => suggestion.toLowerCase().includes(tagPickerSearch.trim().toLowerCase()))
-                .map((suggestion) => {
-                  const selected = tags[tagPickerField].some(
-                    (tag) => tag.toLowerCase() === suggestion.toLowerCase()
-                  );
-                  return (
-                    <TouchableOpacity
-                      key={suggestion}
-                      style={styles.tagPickerOption}
-                      onPress={() => toggleSuggestedTag(tagPickerField, suggestion)}
-                      accessibilityRole="checkbox"
-                      accessibilityState={{ checked: selected }}
-                    >
-                      <Text style={[styles.tagPickerOptionText, selected && styles.tagPickerOptionTextSelected]}>
-                        {suggestion}
-                      </Text>
-                      <Ionicons
-                        name={selected ? 'checkmark-circle' : 'add-circle-outline'}
-                        size={21}
-                        color={selected ? colors.teal : '#94a3b8'}
-                      />
-                    </TouchableOpacity>
-                  );
-                })}
-              {tagPickerField && academicMatchSuggestions.filter(
-                (suggestion) => suggestion.toLowerCase().includes(tagPickerSearch.trim().toLowerCase())
-              ).length === 0 ? (
+              {tagPickerField && filteredTagSuggestions.map((suggestion) => {
+                const selected = tags[tagPickerField].some(
+                  (tag) => tag.trim().toLowerCase() === suggestion.trim().toLowerCase()
+                );
+                return (
+                  <TouchableOpacity
+                    key={suggestion}
+                    style={styles.tagPickerOption}
+                    onPress={() => toggleSuggestedTag(tagPickerField, suggestion)}
+                    accessibilityRole="checkbox"
+                    accessibilityState={{ checked: selected }}
+                  >
+                    <Text style={[styles.tagPickerOptionText, selected && styles.tagPickerOptionTextSelected]}>
+                      {suggestion}
+                    </Text>
+                    <Ionicons
+                      name={selected ? 'checkmark-circle' : 'add-circle-outline'}
+                      size={21}
+                      color={selected ? colors.teal : '#94a3b8'}
+                    />
+                  </TouchableOpacity>
+                );
+              })}
+              {tagPickerField && filteredTagSuggestions.length === 0 ? (
                 <Text style={styles.fieldDescription}>No suggested topics match your search.</Text>
               ) : null}
             </ScrollView>

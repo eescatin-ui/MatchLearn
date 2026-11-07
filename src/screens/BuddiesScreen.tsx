@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Image,
@@ -34,23 +34,33 @@ import UserRatingBadge from '../components/UserRatingBadge';
 import GroupPreferencePicker from '../components/GroupPreferencePicker';
 import {
   BuddyConnections,
+  BlockedUserSummary,
   fetchBuddyConnections,
+  fetchBlockedUsers,
   respondToBuddyRequest,
 } from '../services/api/buddies';
+import { fetchStudySessions, StudySessionRecord } from '../services/api/schedule';
 import { useFocusEffect } from '@react-navigation/native';
 import AppHeader from '../components/AppHeader';
 import { Ionicons } from '@expo/vector-icons';
 import { matchesSearch } from '../utils/search';
 import { colors } from '../theme';
+import { useAuth } from '../context/AuthContext';
+import { getSessionDateTone, sessionDateToneColors } from '../utils/sessionDateTone';
 
 export default function BuddiesScreen({ navigation, route }: any) {
+  const { user } = useAuth();
+  const buddiesScrollRef = useRef<ScrollView | null>(null);
+  const routeParamsRef = useRef(route?.params);
   const [tab, setTab] = useState<'buddies' | 'groups' | 'requests'>('buddies');
   const [connections, setConnections] = useState<BuddyConnections>({
     buddies: [],
     incoming_requests: [],
     outgoing_requests: [],
   });
+  const [blockedUsers, setBlockedUsers] = useState<BlockedUserSummary[]>([]);
   const [groups, setGroups] = useState<GroupRecord[]>([]);
+  const [sessions, setSessions] = useState<StudySessionRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
@@ -65,7 +75,15 @@ export default function BuddiesScreen({ navigation, route }: any) {
   const [respondingTo, setRespondingTo] = useState<number | null>(null);
   const [respondingToGroup, setRespondingToGroup] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  useEffect(() => {
+    routeParamsRef.current = route?.params;
+  }, [route?.params]);
   const filteredBuddies = connections.buddies.filter((buddy) => matchesSearch(searchQuery, buddy.name, buddy.program));
+  const filteredBlockedUsers = blockedUsers.filter((blockedUser) => matchesSearch(
+    searchQuery,
+    blockedUser.name,
+    blockedUser.program
+  ));
   const filteredIncomingRequests = connections.incoming_requests.filter((request) => matchesSearch(
     searchQuery,
     request.user.name,
@@ -95,10 +113,17 @@ export default function BuddiesScreen({ navigation, route }: any) {
 
   const loadData = useCallback(async () => {
     try {
-      const [nextConnections, nextGroups] = await Promise.all([fetchBuddyConnections(), fetchGroups()]);
+      const [nextConnections, nextGroups, nextBlockedUsers, nextSessions] = await Promise.all([
+        fetchBuddyConnections(),
+        fetchGroups(),
+        fetchBlockedUsers(),
+        fetchStudySessions(),
+      ]);
       setError(null);
       setConnections(nextConnections);
       setGroups(nextGroups);
+      setBlockedUsers(nextBlockedUsers);
+      setSessions(nextSessions);
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : 'Unable to load buddies and groups.');
     } finally {
@@ -106,23 +131,41 @@ export default function BuddiesScreen({ navigation, route }: any) {
     }
   }, []);
 
+  const getTargetSessionSummary = (target: { type: 'buddy'; id: number } | { type: 'group'; id: number }) => {
+    const now = new Date();
+    const targetSessions = sessions.filter((session) => {
+      if (session.status !== 'confirmed' && session.status !== 'completed') return false;
+      if (target.type === 'group') return session.study_group_id === target.id;
+      const otherUserId = session.host_user_id === user?.id
+        ? session.participant_user_id
+        : session.host_user_id;
+      return session.target_type === 'buddy' && otherUserId === target.id;
+    }).sort((first, second) => (
+      Math.abs(new Date(first.starts_at).getTime() - now.getTime())
+      - Math.abs(new Date(second.starts_at).getTime() - now.getTime())
+    ));
+    const closestSession = targetSessions[0];
+    if (!closestSession) return null;
+    const tone = getSessionDateTone(closestSession, now);
+    return {
+      label: `${targetSessions.length} ${targetSessions.length === 1 ? 'session' : 'sessions'}`,
+      colors: sessionDateToneColors[tone],
+    };
+  };
+
   useFocusEffect(useCallback(() => {
-    if (route?.params?.openGroupId || route?.params?.openGroups) {
+    const params = routeParamsRef.current;
+    if (params?.openGroupId || params?.openGroups) {
       setTab('groups');
-    } else if (route?.params?.openRequests) {
+    } else if (params?.openRequests) {
       setTab('requests');
-    } else if (route?.params?.openBuddyId || route?.params?.openBuddies) {
+    } else {
       setTab('buddies');
     }
+    setSearchQuery('');
+    buddiesScrollRef.current?.scrollTo({ y: 0, animated: false });
     void loadData();
-  }, [
-    loadData,
-    route?.params?.openBuddies,
-    route?.params?.openBuddyId,
-    route?.params?.openGroupId,
-    route?.params?.openGroups,
-    route?.params?.openRequests,
-  ]));
+  }, [loadData]));
 
   useEffect(() => {
     if (!route?.params?.openGroups && !route?.params?.openBuddies) return;
@@ -189,8 +232,9 @@ export default function BuddiesScreen({ navigation, route }: any) {
   const openBuddyDetails = (buddy: {
     id: number;
     name: string;
-    average_rating: number | null;
-    ratings_count: number;
+    average_rating?: number | null;
+    ratings_count?: number;
+    isBlocked?: boolean;
   }) => {
     navigation.navigate('BuddyGroupDetail', {
       kind: 'buddy',
@@ -198,6 +242,7 @@ export default function BuddiesScreen({ navigation, route }: any) {
       name: buddy.name,
       averageRating: buddy.average_rating,
       ratingsCount: buddy.ratings_count,
+      isBlocked: buddy.isBlocked ?? false,
     });
   };
 
@@ -264,7 +309,7 @@ export default function BuddiesScreen({ navigation, route }: any) {
 
   return (
     <View style={styles.frame}>
-      <ScrollView style={styles.content} contentContainerStyle={styles.contentInner}>
+      <ScrollView ref={buddiesScrollRef} style={styles.content} contentContainerStyle={styles.contentInner}>
         <AppHeader title="My Buddies" subtitle="Your matches and joined study groups" navigation={navigation} />
         <View style={styles.heroCard}>
           <View style={styles.heroIcon}>
@@ -355,38 +400,93 @@ export default function BuddiesScreen({ navigation, route }: any) {
               <>
                 <Text style={styles.sectionTitle}>Study buddies</Text>
                 <View style={styles.buddyList}>
-                  {filteredBuddies.map((buddy, index) => (
+                  {filteredBuddies.map((buddy, index) => {
+                    const sessionSummary = getTargetSessionSummary({ type: 'buddy', id: buddy.id });
+                    return (
+                      <TouchableOpacity
+                        key={buddy.id}
+                        style={[
+                          styles.buddyRow,
+                          index === filteredBuddies.length - 1 && styles.buddyRowLast,
+                        ]}
+                        onPress={() => openBuddyDetails(buddy)}
+                        accessibilityRole="button"
+                        accessibilityLabel={`View ${buddy.name}'s profile${sessionSummary ? `, ${sessionSummary.label}` : ''}`}
+                      >
+                        <View style={styles.buddyAvatarWrapper}>
+                          {buddy.profile_photo_url ? (
+                            <Image source={{ uri: buddy.profile_photo_url }} style={styles.buddyAvatar} />
+                          ) : (
+                            <View style={styles.buddyAvatar}>
+                              <Text style={styles.avatarText}>{buddy.name.slice(0, 2).toUpperCase()}</Text>
+                            </View>
+                          )}
+                          <UserRatingBadge
+                            averageRating={buddy.average_rating}
+                            ratingsCount={buddy.ratings_count}
+                          />
+                        </View>
+                        <View style={styles.cardBody}>
+                          <Text style={styles.cardTitle}>{buddy.name}</Text>
+                          <Text style={styles.cardSub}>{buddy.program || 'SNSU student'}</Text>
+                        </View>
+                        <View style={styles.buddyRowMeta}>
+                          {sessionSummary ? (
+                            <View style={[styles.sessionCountBadge, { backgroundColor: sessionSummary.colors.background }]}>
+                              <Text style={[styles.sessionCountText, { color: sessionSummary.colors.foreground }]}>
+                                {sessionSummary.label}
+                              </Text>
+                            </View>
+                          ) : (
+                            <Text style={styles.score}>Buddy</Text>
+                          )}
+                        </View>
+                        <Ionicons name="chevron-forward" size={17} color="#94a3b8" />
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </>
+            ) : null}
+            {filteredBlockedUsers.length ? (
+              <>
+                <Text style={styles.sectionTitle}>Blocked</Text>
+                <View style={styles.buddyList}>
+                  {filteredBlockedUsers.map((blockedUser, index) => (
                     <TouchableOpacity
-                      key={buddy.id}
+                      key={blockedUser.user_id}
                       style={[
                         styles.buddyRow,
-                        index === filteredBuddies.length - 1 && styles.buddyRowLast,
+                        styles.blockedBuddyRow,
+                        index === filteredBlockedUsers.length - 1 && styles.buddyRowLast,
                       ]}
-                      onPress={() => openBuddyDetails(buddy)}
+                      onPress={() => openBuddyDetails({
+                        id: blockedUser.user_id,
+                        name: blockedUser.name,
+                        average_rating: blockedUser.average_rating,
+                        ratings_count: blockedUser.ratings_count,
+                        isBlocked: true,
+                      })}
                       accessibilityRole="button"
-                      accessibilityLabel={`View ${buddy.name}'s profile`}
+                      accessibilityLabel={`View blocked user ${blockedUser.name}`}
                     >
                       <View style={styles.buddyAvatarWrapper}>
-                        {buddy.profile_photo_url ? (
-                          <Image source={{ uri: buddy.profile_photo_url }} style={styles.buddyAvatar} />
+                        {blockedUser.profile_photo_url ? (
+                          <Image source={{ uri: blockedUser.profile_photo_url }} style={styles.buddyAvatar} />
                         ) : (
                           <View style={styles.buddyAvatar}>
-                            <Text style={styles.avatarText}>{buddy.name.slice(0, 2).toUpperCase()}</Text>
+                            <Text style={styles.avatarText}>{blockedUser.name.slice(0, 2).toUpperCase()}</Text>
                           </View>
                         )}
-                        <UserRatingBadge
-                          averageRating={buddy.average_rating}
-                          ratingsCount={buddy.ratings_count}
-                        />
                       </View>
                       <View style={styles.cardBody}>
-                        <Text style={styles.cardTitle}>{buddy.name}</Text>
-                        <Text style={styles.cardSub}>{buddy.program || 'SNSU student'}</Text>
+                        <Text style={styles.cardTitle}>{blockedUser.name}</Text>
+                        <Text style={styles.cardSub}>{blockedUser.program || 'SNSU student'}</Text>
                       </View>
-                      <View style={styles.buddyRowMeta}>
-                        <Text style={styles.score}>Buddy</Text>
+                      <View style={styles.blockedBadge}>
+                        <Text style={styles.blockedBadgeText}>Blocked</Text>
                       </View>
-                      <Ionicons name="chevron-forward" size={17} color="#94a3b8" />
+                      <Ionicons name="chevron-forward" size={17} color="#b91c1c" />
                     </TouchableOpacity>
                   ))}
                 </View>
@@ -395,23 +495,27 @@ export default function BuddiesScreen({ navigation, route }: any) {
             {!filteredBuddies.length ? (
                 <View style={styles.empty}>
                   <Text style={styles.emptyTitle}>
-                    {searchQuery ? 'No matching study buddies' : 'No study buddies yet'}
+                    {searchQuery ? 'No matching study buddies' : 'No active study buddies'}
                   </Text>
                   <Text style={styles.emptyText}>
                     {searchQuery
                       ? 'Try a different name or program.'
-                      : 'Send a request to someone in Discover. Once they accept, they will appear here.'}
+                      : 'Send a request to someone in Discover. Once they accept, they will appear here. Blocked people remain listed separately below.'}
                   </Text>
                 </View>
             ) : null}
           </>
         ) : tab === 'groups' && filteredGroups.length ? (
           <View style={styles.buddyList}>
-            {filteredGroups.map((group, index) => (
+            {filteredGroups.map((group, index) => {
+              const sessionSummary = getTargetSessionSummary({ type: 'group', id: group.id });
+              return (
             <TouchableOpacity
               style={[styles.buddyRow, index === filteredGroups.length - 1 && styles.buddyRowLast]}
               onPress={() => openGroupDetails(group)}
               key={group.id}
+              accessibilityRole="button"
+              accessibilityLabel={`View ${group.name}${sessionSummary ? `, ${sessionSummary.label}` : ''}`}
             >
               <View style={styles.groupAvatarWrapper}>
                 <GroupAvatar icon={group.avatar_icon} color={group.avatar_color} size={42} />
@@ -429,10 +533,19 @@ export default function BuddiesScreen({ navigation, route }: any) {
                 <Text style={styles.cardTitle}>{group.name}</Text>
                 <Text style={styles.cardSub}>{group.course} · {group.members ?? 0} members</Text>
               </View>
-              <Text style={styles.role}>{group.role}</Text>
+              <View style={styles.buddyRowMeta}>
+                {sessionSummary ? (
+                  <View style={[styles.sessionCountBadge, { backgroundColor: sessionSummary.colors.background }]}>
+                    <Text style={[styles.sessionCountText, { color: sessionSummary.colors.foreground }]}>
+                      {sessionSummary.label}
+                    </Text>
+                  </View>
+                ) : <Text style={styles.role}>{group.role}</Text>}
+              </View>
               <Ionicons name="chevron-forward" size={17} color="#94a3b8" />
             </TouchableOpacity>
-            ))}
+              );
+            })}
           </View>
         ) : tab === 'groups' ? (
           <View style={styles.empty}>
@@ -684,6 +797,7 @@ const styles = StyleSheet.create({
   card: { backgroundColor: colors.surface, padding: 12, borderRadius: 9, marginBottom: 8, flexDirection: 'row', alignItems: 'center', gap: 11, borderWidth: 1, borderColor: colors.border },
   buddyList: { backgroundColor: colors.surface, borderRadius: 11, borderWidth: 1, borderColor: colors.border, overflow: 'hidden' },
   buddyRow: { minHeight: 70, paddingHorizontal: 13, paddingVertical: 10, flexDirection: 'row', alignItems: 'center', gap: 11, borderBottomWidth: 1, borderBottomColor: colors.border },
+  blockedBuddyRow: { backgroundColor: '#fff1f2', borderBottomColor: '#fecaca' },
   buddyRowLast: { borderBottomWidth: 0 },
   buddyAvatarWrapper: { width: 42, height: 42, position: 'relative' },
   requestAvatarWrap: { width: 44, height: 44, position: 'relative' },
@@ -694,11 +808,15 @@ const styles = StyleSheet.create({
   cardBody: { flex: 1 },
   cardTitle: { color: colors.navy, fontWeight: '700', fontSize: 14 },
   buddyRowMeta: { alignItems: 'flex-end', gap: 5 },
+  sessionCountBadge: { borderRadius: 999, paddingHorizontal: 8, paddingVertical: 5 },
+  sessionCountText: { fontSize: 10, fontWeight: '800' },
   ratingBadge: { position: 'absolute', top: -5, right: -6, minWidth: 27, height: 18, paddingHorizontal: 4, borderRadius: 9, backgroundColor: '#fffbeb', borderWidth: 1, borderColor: '#ffffff', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 2, zIndex: 1 },
   ratingValue: { color: '#92400e', fontSize: 11, fontWeight: '800' },
   groupAvatarWrapper: { position: 'relative', marginRight: 4 },
   cardSub: { color: colors.muted, fontSize: 11, marginTop: 4 },
   score: { color: colors.teal, fontWeight: '800', fontSize: 11 },
+  blockedBadge: { backgroundColor: '#fee2e2', borderRadius: 10, paddingHorizontal: 8, paddingVertical: 5 },
+  blockedBadgeText: { color: '#b42318', fontWeight: '800', fontSize: 10 },
   role: { color: '#64748b', fontSize: 12 },
   requestCard: { backgroundColor: '#fff', borderRadius: 11, padding: 9, marginBottom: 9, borderWidth: 1, borderColor: colors.border },
   groupRequests: { backgroundColor: '#fff', borderRadius: 11, padding: 11, marginBottom: 10, borderWidth: 1, borderColor: colors.border },
